@@ -202,12 +202,23 @@ export interface Redirect {
   targetMergeQuerystring?: boolean
 }
 
+/** The GET endpoint wraps each redirect in an envelope with its metadata. */
+interface RedirectListEntry {
+  redirect: Redirect
+  metadata?: {
+    updatedAt?: string
+    updatedBy?: string
+    createdAt?: string
+    createdBy?: string
+  }
+}
+
 export async function getAllRedirects(auth: UniformAuth): Promise<Redirect[]> {
   const all: Redirect[] = []
   const LIMIT = 100
   let offset = 0
   for (;;) {
-    const data = await uniformFetch<{ redirects: Redirect[] }>(
+    const data = await uniformFetch<{ redirects: RedirectListEntry[] }>(
       auth,
       "/api/v1/redirect",
       {
@@ -215,7 +226,7 @@ export async function getAllRedirects(auth: UniformAuth): Promise<Redirect[]> {
       },
     )
     const page = data.redirects ?? []
-    all.push(...page)
+    all.push(...page.map((entry) => entry.redirect))
     if (page.length < LIMIT) break
     offset += LIMIT
   }
