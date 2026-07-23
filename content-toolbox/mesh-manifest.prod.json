@@ -1,0 +1,22 @@
+{
+  "type": "content-toolbox",
+  "displayName": "Content Toolbox",
+  "logoIconUrl": "https://uniform-mesh-app-content-toolbox.vercel.app/tools-badge.png",
+  "badgeIconUrl": "https://uniform-mesh-app-content-toolbox.vercel.app/tools-badge.png",
+  "category": "unknown",
+  "baseLocationUrl": "https://uniform-mesh-app-content-toolbox.vercel.app",
+  "identityDelegation": true,
+  "locations": {
+    "settings": {
+      "url": "/"
+    },
+    "projectTools": [
+      {
+        "id": "content-ops-toolkit",
+        "name": "Content Ops Toolkit",
+        "url": "/content-ops",
+        "iconUrl": "https://uniform-mesh-app-content-toolbox.vercel.app/tools-badge.png"
+      }
+    ]
+  }
+}

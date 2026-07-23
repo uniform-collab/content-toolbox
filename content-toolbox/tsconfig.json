@@ -17,10 +17,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
-    "incremental": true,
-    "types": [
-      "vitest-environment-miniflare/globals"
-    ]
+    "incremental": true
   },
   "include": [
     "next-env.d.ts",
