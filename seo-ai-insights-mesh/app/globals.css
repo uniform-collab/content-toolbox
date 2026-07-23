@@ -1,0 +1,47 @@
+/*
+ * The <Theme /> provider from @uniformdev/design-system injects the design
+ * token CSS variables (colors, type scale, radii, elevation, fonts) and the
+ * baseline reset at runtime. This file only establishes the page canvas using
+ * those tokens — do not hardcode raw color/spacing values here.
+ */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background-color: var(--gray-50);
+  color: var(--typography-base);
+  font-family: var(--ff-base);
+  font-size: var(--fs-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/*
+ * The design system scopes its utility/status color tokens to Theme-styled
+ * subtrees (Callout, Banner, etc.), so they are not reliably available to
+ * custom `css`-prop styles or raw SVG fills elsewhere on the page. Re-declare
+ * them at :root using the same design-system values so charts, deltas, and
+ * status indicators resolve them consistently.
+ */
+:root {
+  --utility-success-icon: #4ade80;
+  --utility-success-title: #166534;
+  --utility-success-container: #f0fdfa;
+  --utility-danger-icon: #f87171;
+  --utility-danger-title: #991b1b;
+  --utility-danger-container: #fef2f2;
+  --utility-caution-icon: #facc15;
+  --utility-caution-title: #854d0e;
+  --utility-caution-container: #fefce8;
+  --utility-info-icon: #60a5fa;
+  --utility-info-title: #1e40af;
+  --utility-info-container: #eff6ff;
+}

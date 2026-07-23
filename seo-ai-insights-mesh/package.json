@@ -1,0 +1,31 @@
+{
+  "name": "seo-ai-insights-mesh",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 9000",
+    "build": "next build",
+    "start": "next start -p 9000",
+    "lint": "next lint",
+    "register-to-team": "uniform integration definition register ./mesh-manifest.json",
+    "unregister-from-team": "uniform integration definition remove seo-ai-insights",
+    "install-to-project": "uniform integration install seo-ai-insights",
+    "uninstall-from-project": "uniform integration uninstall seo-ai-insights"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.13.5",
+    "@uniformdev/design-system": "20.72.3",
+    "next": "16.2.11",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "recharts": "^3.9.2",
+    "@uniformdev/mesh-sdk-react": "20.72.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5",
+    "@uniformdev/cli": "20.72.3"
+  }
+}

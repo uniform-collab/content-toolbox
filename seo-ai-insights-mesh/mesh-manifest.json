@@ -1,0 +1,28 @@
+{
+  "type": "seo-ai-insights",
+  "displayName": "SEO & AI Insights",
+  "category": "analytics",
+  "logoIconUrl": "http://localhost:9000/icon.svg",
+  "badgeIconUrl": "http://localhost:9000/icon.svg",
+  "baseLocationUrl": "http://localhost:9000",
+  "locations": {
+    "install": {
+      "description": [
+        "SEO and AI visibility insights for this project, with data collection managed by Uniform.",
+        "Track rankings, AI mentions across ChatGPT, Gemini, Perplexity, Claude and Google AI Overviews, discover keyword opportunities, and find decaying content to refresh.",
+        "Configure the target domain in the integration settings after installing. No external accounts or API keys required."
+      ]
+    },
+    "settings": {
+      "url": "/settings"
+    },
+    "projectTools": [
+      {
+        "id": "seo-ai-insights",
+        "name": "SEO & AI Insights",
+        "url": "/seo-dashboard",
+        "iconUrl": "http://localhost:9000/icon.svg"
+      }
+    ]
+  }
+}
