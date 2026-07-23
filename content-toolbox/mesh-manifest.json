@@ -4,7 +4,8 @@
   "logoIconUrl": "http://localhost:9000/tools-badge.png",
   "badgeIconUrl": "http://localhost:9000/tools-badge.png",
   "category": "unknown",
-  "baseLocationUrl": "http://localhost:9000",
+  "baseLocationUrl": "https://localhost:9000",
+  "identityDelegation": true,
   "locations": {
     "settings": {
       "url": "/"

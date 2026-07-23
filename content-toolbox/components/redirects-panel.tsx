@@ -2,6 +2,7 @@
 
 import { css } from '@emotion/react';
 import { useQuery } from '@tanstack/react-query';
+import { CSRF_HEADER_NAME, CSRF_HEADER_VALUE } from '@uniformdev/mesh-sdk-react';
 import {
   Banner,
   Button,
@@ -40,7 +41,7 @@ interface ImportRedirectRow extends Partial<Redirect> {
 }
 
 const fetcher = async (url: string) => {
-  const res = await fetch(url);
+  const res = await fetch(url, { credentials: 'same-origin' });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
   return data as { redirects: Redirect[] };
@@ -186,7 +187,11 @@ export function RedirectsPanel({ projectId }: { projectId: string }) {
     try {
       const res = await fetch('/api/uniform/redirects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE,
+        },
         body: JSON.stringify({
           projectId,
           redirects: validRows.map(({ issues: _issues, ...redirect }) => redirect),
@@ -240,7 +245,7 @@ export function RedirectsPanel({ projectId }: { projectId: string }) {
               disabled={!data || data.redirects.length === 0}
               onClick={handleExport}
             >
-              <Icon icon="software-download" size="1rem" />
+              <Icon icon="software-download" size="1rem" iconColor="currentColor" />
               Download CSV
             </Button>
           }
@@ -416,7 +421,7 @@ export function RedirectsPanel({ projectId }: { projectId: string }) {
                 disabled={importing || validRows.length === 0}
                 onClick={handleImport}
               >
-                <Icon icon="software-upload" size="1rem" />
+                <Icon icon="software-upload" size="1rem" iconColor="currentColor" />
                 {importing ? 'Importing…' : `Import ${validRows.length} redirects into Uniform`}
               </Button>
               <Button

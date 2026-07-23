@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AssetParamValueItem } from '@uniformdev/mesh-sdk';
-import { useMeshLocation } from '@uniformdev/mesh-sdk-react';
+import { AssetParamValueItem, useMeshLocation } from '@uniformdev/mesh-sdk-react';
 import type { NextPage } from 'next';
 import React from 'react';
 import { v4 as uuid } from 'uuid';

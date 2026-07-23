@@ -1,36 +1,25 @@
 /**
  * Server-side client for the Uniform Platform API.
- * The API key stays on the server — never expose it to the browser.
  *
- * The project ID is passed per request (the Mesh project tool sends the
- * current project's ID from its location metadata), with an optional
- * UNIFORM_PROJECT_ID environment variable fallback for local testing.
+ * Authentication uses an identity-delegation access token (bearer JWT scoped
+ * to the signed-in dashboard user) — no static service-account API key. The
+ * token is read from the sealed delegation cookie by the API routes and
+ * passed here per request; it never reaches the browser.
+ *
+ * The project ID comes from the Mesh project tool location metadata and is
+ * passed per request as well.
  */
 
-const BASE_URL = "https://uniform.app"
+const API_HOST = process.env.UNIFORM_API_HOST ?? "https://uniform.app"
 
-function getApiKey(): string {
-  const apiKey = process.env.UNIFORM_API_KEY
-  if (!apiKey) {
-    throw new Error("Missing UNIFORM_API_KEY environment variable.")
-  }
-  return apiKey
-}
-
-export function resolveProjectId(candidate: unknown): string {
-  const projectId =
-    (typeof candidate === "string" && candidate.trim()) ||
-    process.env.UNIFORM_PROJECT_ID
-  if (!projectId) {
-    throw new Error(
-      "Missing project ID. Pass ?projectId= (or set UNIFORM_PROJECT_ID).",
-    )
-  }
-  return projectId
+/** Per-request auth context: current project + the user's delegation token. */
+export interface UniformAuth {
+  projectId: string
+  bearerToken: string
 }
 
 async function uniformFetch<T>(
-  projectId: string,
+  auth: UniformAuth,
   path: string,
   init?: RequestInit & {
     searchParams?: Record<string, string>
@@ -38,9 +27,9 @@ async function uniformFetch<T>(
     omitProjectIdParam?: boolean
   },
 ): Promise<T> {
-  const url = new URL(path, BASE_URL)
+  const url = new URL(path, API_HOST)
   if (!init?.omitProjectIdParam) {
-    url.searchParams.set("projectId", projectId)
+    url.searchParams.set("projectId", auth.projectId)
   }
   for (const [k, v] of Object.entries(init?.searchParams ?? {})) {
     url.searchParams.set(k, v)
@@ -48,7 +37,7 @@ async function uniformFetch<T>(
   const res = await fetch(url.toString(), {
     method: init?.method ?? "GET",
     headers: {
-      "x-api-key": getApiKey(),
+      Authorization: `Bearer ${auth.bearerToken}`,
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
     },
     body: init?.body,
@@ -90,21 +79,21 @@ export interface ProjectMapNode {
 }
 
 export async function getProjectMaps(
-  projectId: string,
+  auth: UniformAuth,
 ): Promise<ProjectMapInfo[]> {
   const data = await uniformFetch<{ projectMaps: ProjectMapInfo[] }>(
-    projectId,
+    auth,
     "/api/v1/project-map",
   )
   return data.projectMaps ?? []
 }
 
 export async function getProjectMapNodes(
-  projectId: string,
+  auth: UniformAuth,
   projectMapId: string,
 ): Promise<ProjectMapNode[]> {
   const data = await uniformFetch<{ nodes: ProjectMapNode[] }>(
-    projectId,
+    auth,
     "/api/v1/project-map-nodes",
     {
       searchParams: {
@@ -129,7 +118,7 @@ export interface NodeUpsert {
 
 /** The API accepts at most 5 nodes per PUT — batch sequentially. */
 export async function upsertProjectMapNodes(
-  projectId: string,
+  auth: UniformAuth,
   projectMapId: string,
   nodes: NodeUpsert[],
 ): Promise<{ succeeded: number; errors: { path: string; message: string }[] }> {
@@ -139,11 +128,11 @@ export async function upsertProjectMapNodes(
   for (let i = 0; i < nodes.length; i += BATCH) {
     const batch = nodes.slice(i, i + BATCH)
     try {
-      await uniformFetch(projectId, "/api/v1/project-map-nodes", {
+      await uniformFetch(auth, "/api/v1/project-map-nodes", {
         method: "PUT",
         omitProjectIdParam: true,
         body: JSON.stringify({
-          projectId,
+          projectId: auth.projectId,
           projectMapId,
           nodes: batch.map((node) => ({ node })),
         }),
@@ -173,7 +162,7 @@ export interface CanvasItem {
 
 /** Fetch all compositions for a given state (0 = draft/latest, 64 = published). */
 export async function getAllCompositions(
-  projectId: string,
+  auth: UniformAuth,
   state: 0 | 64,
 ): Promise<CanvasItem[]> {
   const all: CanvasItem[] = []
@@ -181,7 +170,7 @@ export async function getAllCompositions(
   let offset = 0
   for (;;) {
     const data = await uniformFetch<{ compositions: CanvasItem[] }>(
-      projectId,
+      auth,
       "/api/v1/canvas",
       {
         searchParams: {
@@ -213,13 +202,13 @@ export interface Redirect {
   targetMergeQuerystring?: boolean
 }
 
-export async function getAllRedirects(projectId: string): Promise<Redirect[]> {
+export async function getAllRedirects(auth: UniformAuth): Promise<Redirect[]> {
   const all: Redirect[] = []
   const LIMIT = 100
   let offset = 0
   for (;;) {
     const data = await uniformFetch<{ redirects: Redirect[] }>(
-      projectId,
+      auth,
       "/api/v1/redirect",
       {
         searchParams: { limit: String(LIMIT), offset: String(offset) },
@@ -234,7 +223,7 @@ export async function getAllRedirects(projectId: string): Promise<Redirect[]> {
 }
 
 export async function upsertRedirects(
-  projectId: string,
+  auth: UniformAuth,
   redirects: Redirect[],
 ): Promise<{
   succeeded: number
@@ -249,10 +238,10 @@ export async function upsertRedirects(
     await Promise.all(
       batch.map(async (redirect) => {
         try {
-          await uniformFetch(projectId, "/api/v1/redirect", {
+          await uniformFetch(auth, "/api/v1/redirect", {
             method: "PUT",
             omitProjectIdParam: true,
-            body: JSON.stringify({ projectId, redirect }),
+            body: JSON.stringify({ projectId: auth.projectId, redirect }),
           })
           succeeded++
         } catch (err) {

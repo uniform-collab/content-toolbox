@@ -2,6 +2,7 @@
 
 import { css } from '@emotion/react';
 import { useQuery } from '@tanstack/react-query';
+import { CSRF_HEADER_NAME, CSRF_HEADER_VALUE } from '@uniformdev/mesh-sdk-react';
 import {
   Banner,
   Button,
@@ -60,7 +61,7 @@ interface ImportRow {
 }
 
 const fetcher = async (url: string) => {
-  const res = await fetch(url);
+  const res = await fetch(url, { credentials: 'same-origin' });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
   return data as ProjectMapPayload;
@@ -220,7 +221,11 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
     try {
       const res = await fetch('/api/uniform/project-map', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE,
+        },
         body: JSON.stringify({
           projectId,
           projectMapId: data.projectMap.id,
@@ -270,7 +275,7 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
           }
           actions={
             <Button buttonType="primary" disabled={!data} onClick={handleExport}>
-              <Icon icon="software-download" size="1rem" />
+              <Icon icon="software-download" size="1rem" iconColor="currentColor" />
               Download CSV
             </Button>
           }
@@ -522,7 +527,7 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
                 disabled={importing || validRows.length === 0}
                 onClick={handleImport}
               >
-                <Icon icon="software-upload" size="1rem" />
+                <Icon icon="software-upload" size="1rem" iconColor="currentColor" />
                 {importing ? 'Importing…' : `Import ${validRows.length} nodes into Uniform`}
               </Button>
               <Button

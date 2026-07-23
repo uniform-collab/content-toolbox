@@ -1,12 +1,14 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
+import { requireMeshCsrf } from '../../../lib/csrf';
+import { loadMeshDelegationSession } from '../../../lib/delegationSession';
 import {
   getAllCompositions,
   getProjectMapNodes,
   getProjectMaps,
-  resolveProjectId,
   upsertProjectMapNodes,
   type NodeUpsert,
+  type UniformAuth,
 } from '../../../lib/uniform';
 
 export const config = {
@@ -42,10 +44,8 @@ function flattenValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-async function handleGet(req: NextApiRequest, res: NextApiResponse) {
-  const projectId = resolveProjectId(req.query.projectId);
-
-  const maps = await getProjectMaps(projectId);
+async function handleGet(req: NextApiRequest, res: NextApiResponse, auth: UniformAuth) {
+  const maps = await getProjectMaps(auth);
   const projectMap = maps.find((m) => m.default) ?? maps[0];
   if (!projectMap) {
     res.status(404).json({ error: 'No project map found in this project.' });
@@ -53,9 +53,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   }
 
   const [nodes, drafts, published] = await Promise.all([
-    getProjectMapNodes(projectId, projectMap.id),
-    getAllCompositions(projectId, 0),
-    getAllCompositions(projectId, 64),
+    getProjectMapNodes(auth, projectMap.id),
+    getAllCompositions(auth, 0),
+    getAllCompositions(auth, 64),
   ]);
 
   const publishedById = new Map(published.map((c) => [c.composition._id, c.modified]));
@@ -127,13 +127,12 @@ interface ImportBody {
   nodes: NodeUpsert[];
 }
 
-async function handlePost(req: NextApiRequest, res: NextApiResponse) {
+async function handlePost(req: NextApiRequest, res: NextApiResponse, auth: UniformAuth) {
   const body = req.body as ImportBody;
   if (!body?.projectMapId || !Array.isArray(body.nodes)) {
     res.status(400).json({ error: 'Expected { projectMapId, nodes } in request body.' });
     return;
   }
-  const projectId = resolveProjectId(body.projectId);
 
   const invalid = body.nodes.filter(
     (n) =>
@@ -158,19 +157,41 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     ...(n.compositionId?.trim() ? { compositionId: n.compositionId.trim() } : {}),
   }));
 
-  const result = await upsertProjectMapNodes(projectId, body.projectMapId, nodes);
+  const result = await upsertProjectMapNodes(auth, body.projectMapId, nodes);
   res.status(200).json(result);
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    if (req.method === 'GET') {
-      await handleGet(req, res);
-    } else if (req.method === 'POST') {
-      await handlePost(req, res);
-    } else {
+    if (req.method !== 'GET' && req.method !== 'POST') {
       res.setHeader('Allow', 'GET, POST');
       res.status(405).json({ error: `Method ${req.method} not allowed.` });
+      return;
+    }
+
+    // Writes need CSRF protection because the delegation cookie is SameSite=None.
+    if (req.method === 'POST' && !requireMeshCsrf(req, res)) {
+      return;
+    }
+
+    const session = await loadMeshDelegationSession(req, res);
+    if (!session) {
+      res.status(401).json({ error: 'No active delegation session.' });
+      return;
+    }
+
+    const projectId =
+      req.method === 'GET' ? req.query.projectId : (req.body as ImportBody | undefined)?.projectId;
+    if (!projectId || typeof projectId !== 'string') {
+      res.status(400).json({ error: 'projectId is required.' });
+      return;
+    }
+
+    const auth: UniformAuth = { projectId, bearerToken: session.accessToken };
+    if (req.method === 'GET') {
+      await handleGet(req, res, auth);
+    } else {
+      await handlePost(req, res, auth);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unexpected error';

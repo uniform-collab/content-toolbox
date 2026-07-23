@@ -1,7 +1,7 @@
 /** @jsxImportSource @emotion/react */
 
 import { css } from '@emotion/react';
-import { Button, Icon, Spinner } from '@uniformdev/design-system';
+import { Button, Icon, LoadingIndicator } from '@uniformdev/design-system';
 import { useRef, type ReactNode } from 'react';
 
 /** Trigger a client-side download of a CSV string. */
@@ -50,14 +50,14 @@ export function CsvFilePicker({
         }}
       />
       <Button buttonType="secondary" disabled={disabled} onClick={() => inputRef.current?.click()}>
-        <Icon icon="file-document" size="1rem" />
+        <Icon icon="file-document" size="1rem" iconColor="currentColor" />
         {label}
       </Button>
     </>
   );
 }
 
-/** Inline loading row with the system spinner. */
+/** Inline loading row with the design-system loading indicator. */
 export function LoadingRow({ label }: { label: string }) {
   return (
     <div
@@ -69,8 +69,9 @@ export function LoadingRow({ label }: { label: string }) {
         padding-block: var(--spacing-md);
       `}
     >
-      <Spinner width={18} label={label} />
+      <LoadingIndicator size="sm" aria-label={label} />
       <span
+        aria-hidden="true"
         css={css`
           font-size: var(--fs-sm);
         `}
