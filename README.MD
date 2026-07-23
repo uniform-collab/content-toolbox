@@ -9,13 +9,14 @@ Built with Next.js (pages router), the Uniform design system, and `@uniformdev/m
 **Project map**
 
 - Export every node to CSV: name, type, path, description, order, node ID, composition ID/name/type, and live **publish status** (Published / Modified / Draft), computed by comparing draft and published composition timestamps.
-- Optionally include any **composition parameters** as extra CSV columns — searchable multi-select over all parameter keys found in the project.
-- Import a modified export back: rows are matched by Node ID (or upserted by path), validated with per-row feedback before anything is written, and batched to respect the API's 5-nodes-per-PUT limit.
+- Optionally include any **composition parameters** as extra CSV columns — searchable multi-select with removable chips and an **SEO set / All / Clear** preset row.
+- **Export preview**: a collapsible, paginated table filterable by name/path, node type, and publish status. The table mirrors the CSV — all 10 base columns plus selected parameter columns with their live values — and every column header has a checkbox to exclude that column from the export (with a hint when a column required for re-import is unchecked).
+- Import a modified export back through a drop zone: rows are matched by Node ID (or by path), diffed field-by-field against the live project map, and classified as **update / create / error / unchanged** with a human-readable change description per row. Only actual changes are written (batched to respect the API's 5-nodes-per-PUT limit); error rows are skipped with their reasons shown.
 
 **Redirects**
 
-- Export all redirects with source, target, status code, and all boolean flags.
-- Import from CSV with per-row validation (missing URLs block a row; unusual status codes only warn), preview table, and a success/error report after import. Rows with an ID update existing redirects; rows without create new ones.
+- Export all redirects with source, target, status code, and all boolean flags — filterable and paginated.
+- Import from CSV through the same drop-zone → diff preview → apply flow: rows with an ID are diffed against the existing redirect and shown as updates ("Status code: 302 → 301"), rows without an ID as creates. Missing URLs block a row; unusual status codes only warn. A success/error report follows the import.
 
 **Identity delegation (no shared API keys)**
 
@@ -99,6 +100,7 @@ Header matching is tolerant (case- and punctuation-insensitive), so a re-uploade
 ```
 pages/
   content-ops.tsx            # projectTool location: DelegationProvider + gate + toolkit
+  dev-preview.tsx            # dev-only: toolkit with mocked data, outside the dashboard iframe
   api/
     session.ts               # exchanges the Mesh session token, sets the sealed cookie
     status.ts                # active | expired | none (cookie is HttpOnly, so JS asks here)
@@ -106,10 +108,10 @@ pages/
       project-map.ts         # GET export payload / POST upsert nodes (delegated)
       redirects.ts           # GET all redirects / POST upsert redirects (delegated)
 components/
-  content-ops-toolkit.tsx    # tabbed shell (design-system Tabs, ToastContainer)
+  content-ops-toolkit.tsx    # tabbed shell (design-system Tabs + node/redirect counters)
   project-map-panel.tsx      # export/import UI for the project map
   redirects-panel.tsx        # export/import UI for redirects
-  tool-shared.tsx, ui.tsx    # CSV file picker, panel header, layout primitives
+  tool-shared.tsx, ui.tsx    # CSV drop zone, diff preview, pagination, layout primitives
 lib/
   uniform.ts                 # server-side Platform API client (bearer auth, paging, batching)
   delegationSession.ts       # cookie read/unseal/refresh helpers
@@ -133,7 +135,7 @@ The `reference-lib/`, `pages/reference/`, `edgehancer/`, `dataResourceEditor/`, 
 | Script | What it does |
 |---|---|
 | `pnpm dev` | HTTPS dev server on port 9000 (webpack mode) |
-| `pnpm dev:http` | Plain HTTP dev server — delegation will **not** work; useful for UI-only work |
+| `pnpm dev:http` | Plain HTTP dev server — delegation will **not** work; useful for UI-only work. Open `/dev-preview` for the toolkit with mocked data (no dashboard needed) |
 | `pnpm build` / `pnpm start` | Production build / serve |
 | `pnpm register-to-team` / `pnpm install-to-project` | Register the manifest / enable on a project |
 | `pnpm unregister-from-team` / `pnpm uninstall-from-project` | Tear down |

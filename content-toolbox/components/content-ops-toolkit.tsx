@@ -2,6 +2,7 @@
 
 import { css } from '@emotion/react';
 import {
+  Counter,
   Heading,
   TabButton,
   TabButtonGroup,
@@ -11,11 +12,15 @@ import {
 } from '@uniformdev/design-system';
 import { useState } from 'react';
 
-import { ProjectMapPanel } from './project-map-panel';
-import { RedirectsPanel } from './redirects-panel';
+import { ProjectMapPanel, useProjectMapQuery } from './project-map-panel';
+import { RedirectsPanel, useRedirectsQuery } from './redirects-panel';
 
 export function ContentOpsToolkit({ projectId }: { projectId: string }) {
   const [tab, setTab] = useState<string | undefined>('project-map');
+
+  // Same query keys as the panels, so react-query shares a single fetch.
+  const { data: mapData } = useProjectMapQuery(projectId);
+  const { data: redirData } = useRedirectsQuery(projectId);
 
   return (
     <div
@@ -46,14 +51,36 @@ export function ContentOpsToolkit({ projectId }: { projectId: string }) {
             text-wrap: pretty;
           `}
         >
-          Export and import your Uniform project map and redirects as CSV.
+          Move your project map and redirects between Uniform and CSV.
         </p>
       </div>
 
       <Tabs selectedId={tab} onSelectedIdChange={setTab}>
         <TabButtonGroup aria-label="Toolkit sections">
-          <TabButton id="project-map">Project map</TabButton>
-          <TabButton id="redirects">Redirects</TabButton>
+          <TabButton id="project-map">
+            <span
+              css={css`
+                display: inline-flex;
+                align-items: center;
+                gap: var(--spacing-2xs);
+              `}
+            >
+              Project map
+              <Counter count={mapData?.nodes.length} size="sm" bgColor="var(--gray-50)" />
+            </span>
+          </TabButton>
+          <TabButton id="redirects">
+            <span
+              css={css`
+                display: inline-flex;
+                align-items: center;
+                gap: var(--spacing-2xs);
+              `}
+            >
+              Redirects
+              <Counter count={redirData?.redirects.length} size="sm" bgColor="var(--gray-50)" />
+            </span>
+          </TabButton>
         </TabButtonGroup>
         <TabContent tabId="project-map" keepMounted>
           <div

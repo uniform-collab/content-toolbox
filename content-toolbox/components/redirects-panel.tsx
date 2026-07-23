@@ -7,8 +7,11 @@ import {
   Banner,
   Button,
   Callout,
+  Caption,
   Chip,
   Icon,
+  InputKeywordSearch,
+  Link,
   ResponsiveTableContainer,
   Table,
   TableBody,
@@ -18,10 +21,21 @@ import {
   TableRow,
   toast,
 } from '@uniformdev/design-system';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { headerIndex, parseBoolean, parseCsv, toCsv } from '../lib/csv';
-import { CsvFilePicker, downloadCsv, LoadingRow, PanelHeader } from './tool-shared';
+import {
+  clampOffset,
+  CsvDropzone,
+  downloadCsv,
+  ImportDone,
+  ImportPreview,
+  LoadingRow,
+  PaginationFooter,
+  PanelSection,
+  SectionHeader,
+  type ImportPreviewRow,
+} from './tool-shared';
 import { Stack } from './ui';
 
 interface Redirect {
@@ -38,6 +52,7 @@ interface Redirect {
 
 interface ImportRedirectRow extends Partial<Redirect> {
   issues: string[];
+  warnings: string[];
 }
 
 const fetcher = async (url: string) => {
@@ -46,6 +61,15 @@ const fetcher = async (url: string) => {
   if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
   return data as { redirects: Redirect[] };
 };
+
+export function useRedirectsQuery(projectId: string) {
+  return useQuery<{ redirects: Redirect[] }, Error>({
+    queryKey: ['redirects', projectId],
+    queryFn: () => fetcher(`/api/uniform/redirects?projectId=${encodeURIComponent(projectId)}`),
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+}
 
 const HEADERS = [
   'ID',
@@ -91,6 +115,7 @@ function parseRedirectsCsv(text: string): {
   const rows: ImportRedirectRow[] = parsed.slice(1).map((cells) => {
     const get = (c: number | undefined) => (c !== undefined ? (cells[c] ?? '').trim() : '');
     const issues: string[] = [];
+    const warnings: string[] = [];
     const sourceUrl = get(sourceCol);
     const targetUrl = get(targetCol);
     const statusRaw = get(statusCol);
@@ -99,9 +124,9 @@ function parseRedirectsCsv(text: string): {
     if (!sourceUrl) issues.push('Missing source URL');
     if (!targetUrl) issues.push('Missing target URL');
     if (Number.isNaN(targetStatusCode)) {
-      issues.push(`Invalid status code "${statusRaw}"`);
+      issues.push(`Invalid status code "${statusRaw}" (use 301, 302, 307, or 308)`);
     } else if (![301, 302, 307, 308].includes(targetStatusCode)) {
-      issues.push(`Unusual status code ${targetStatusCode}`);
+      warnings.push(`Unusual status code ${targetStatusCode}`);
     }
 
     return {
@@ -115,37 +140,123 @@ function parseRedirectsCsv(text: string): {
       targetPreserveIncomingDomain: parseBoolean(get(presDomainCol) || undefined),
       targetMergeQuerystring: parseBoolean(get(mergeCol) || undefined),
       issues,
+      warnings,
     };
   });
 
   return { rows };
 }
 
-/** "Unusual status code" is a warning, not a blocker. */
-function isBlocking(issue: string) {
-  return !issue.startsWith('Unusual status code');
-}
+const FLAG_LABELS: [keyof Redirect, string][] = [
+  ['sourceRetainQuerystring', 'Retain query string'],
+  ['sourceMustMatchDomain', 'Must match domain'],
+  ['targetPreserveIncomingProtocol', 'Preserve incoming protocol'],
+  ['targetPreserveIncomingDomain', 'Preserve incoming domain'],
+  ['targetMergeQuerystring', 'Merge query string'],
+];
 
-export function RedirectsPanel({ projectId }: { projectId: string }) {
-  const { data, error, isLoading, refetch } = useQuery<{ redirects: Redirect[] }, Error>({
-    queryKey: ['redirects', projectId],
-    queryFn: () => fetcher(`/api/uniform/redirects?projectId=${encodeURIComponent(projectId)}`),
-    refetchOnWindowFocus: false,
-    retry: false,
+/** Classify a CSV row against the live redirects and describe the change. */
+function classifyRows(rows: ImportRedirectRow[], redirects: Redirect[]) {
+  const byId = new Map(redirects.filter((r) => r.id).map((r) => [r.id as string, r]));
+
+  const previewRows: ImportPreviewRow[] = [];
+  const changedRows: ImportRedirectRow[] = [];
+
+  rows.forEach((row, i) => {
+    if (row.issues.length > 0) {
+      previewRows.push({
+        action: 'error',
+        name: row.sourceUrl || `Row ${i + 2}`,
+        detail: row.issues.join('; '),
+      });
+      return;
+    }
+
+    const existing = row.id ? byId.get(row.id) : undefined;
+    const warn = row.warnings.length > 0 ? ` — ${row.warnings.join('; ')}` : '';
+
+    if (!existing) {
+      previewRows.push({
+        action: 'create',
+        name: row.sourceUrl ?? '',
+        detail: `→ ${row.targetUrl} (${row.targetStatusCode})${warn}`,
+      });
+      changedRows.push(row);
+      return;
+    }
+
+    const changes: string[] = [];
+    if (row.sourceUrl !== existing.sourceUrl) {
+      changes.push(`Source: ${existing.sourceUrl} → ${row.sourceUrl}`);
+    }
+    if (row.targetUrl !== existing.targetUrl) {
+      changes.push(`Target: ${existing.targetUrl} → ${row.targetUrl}`);
+    }
+    if (row.targetStatusCode !== existing.targetStatusCode) {
+      changes.push(`Status code: ${existing.targetStatusCode} → ${row.targetStatusCode}`);
+    }
+    for (const [key, label] of FLAG_LABELS) {
+      const next = row[key] as boolean | undefined;
+      if (next !== undefined && next !== ((existing[key] as boolean | undefined) ?? false)) {
+        changes.push(`${label}: ${next ? 'on' : 'off'}`);
+      }
+    }
+
+    if (changes.length === 0) return;
+    previewRows.push({
+      action: 'update',
+      name: existing.sourceUrl,
+      detail: changes.join('; ') + warn,
+    });
+    changedRows.push(row);
   });
 
-  const [importRows, setImportRows] = useState<ImportRedirectRow[] | null>(null);
+  const unchanged = rows.filter((r) => r.issues.length === 0).length - changedRows.length;
+  return { previewRows, changedRows, unchanged };
+}
+
+function codeLabel(code: number) {
+  if (code === 301 || code === 308) return 'permanent';
+  if (code === 302 || code === 307) return 'temporary';
+  return '';
+}
+
+const PAGE_SIZE = 10;
+
+export function RedirectsPanel({ projectId }: { projectId: string }) {
+  const { data, error, isLoading, refetch } = useRedirectsQuery(projectId);
+
+  const [search, setSearch] = useState('');
+  const [offset, setOffset] = useState(0);
+
+  const [importStage, setImportStage] = useState<'idle' | 'preview' | 'done'>('idle');
   const [importFileName, setImportFileName] = useState('');
+  const [importRows, setImportRows] = useState<ImportRedirectRow[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<{
-    succeeded: number;
-    errors: { sourceUrl: string; message: string }[];
-  } | null>(null);
+  const [doneSummary, setDoneSummary] = useState('');
+  const [doneErrorDetail, setDoneErrorDetail] = useState<string | undefined>(undefined);
+
+  const redirects = useMemo(() => data?.redirects ?? [], [data]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return redirects.filter(
+      (r) => !q || r.sourceUrl.toLowerCase().includes(q) || r.targetUrl.toLowerCase().includes(q)
+    );
+  }, [redirects, search]);
+
+  const safeOffset = clampOffset(offset, filtered.length, PAGE_SIZE);
+  const pageRows = filtered.slice(safeOffset, safeOffset + PAGE_SIZE);
+
+  const classified = useMemo(
+    () => (data && importStage === 'preview' ? classifyRows(importRows, data.redirects) : null),
+    [data, importStage, importRows]
+  );
 
   const handleExport = () => {
-    if (!data) return;
-    const rows = data.redirects.map((r) => [
+    if (redirects.length === 0) return;
+    const rows = redirects.map((r) => [
       r.id ?? '',
       r.sourceUrl,
       r.targetUrl,
@@ -156,34 +267,43 @@ export function RedirectsPanel({ projectId }: { projectId: string }) {
       r.targetPreserveIncomingDomain ?? '',
       r.targetMergeQuerystring ?? '',
     ]);
+    downloadCsv(`redirects-${new Date().toISOString().slice(0, 10)}.csv`, toCsv([HEADERS, ...rows]));
+    toast.success(`Exported ${redirects.length} redirects to CSV.`);
+  };
+
+  const handleTemplate = (e: React.MouseEvent) => {
+    e.preventDefault();
     downloadCsv(
-      `redirects-${new Date().toISOString().slice(0, 10)}.csv`,
-      toCsv([HEADERS, ...rows])
+      'redirects-template.csv',
+      toCsv([
+        ['ID', 'Source URL', 'Target URL', 'Status Code', 'Retain Query String'],
+        ['', '/old-path', '/en/new-path', '301', 'true'],
+      ])
     );
-    toast.success(`Exported ${data.redirects.length} redirects to CSV.`);
+    toast.success('Template downloaded.');
   };
 
   const handleFile = (name: string, text: string) => {
-    setImportResult(null);
     const { rows, error: parseError } = parseRedirectsCsv(text);
     if (parseError) {
       setImportError(parseError);
-      setImportRows(null);
-      setImportFileName('');
       return;
     }
     setImportError(null);
     setImportRows(rows);
     setImportFileName(name);
+    setImportStage('preview');
   };
 
-  const validRows = importRows?.filter((r) => r.issues.filter(isBlocking).length === 0) ?? [];
-  const invalidRows = importRows?.filter((r) => r.issues.filter(isBlocking).length > 0) ?? [];
+  const resetImport = () => {
+    setImportStage('idle');
+    setImportRows([]);
+    setImportError(null);
+  };
 
-  const handleImport = async () => {
-    if (validRows.length === 0) return;
+  const handleApply = async () => {
+    if (!classified || classified.changedRows.length === 0) return;
     setImporting(true);
-    setImportResult(null);
     try {
       const res = await fetch('/api/uniform/redirects', {
         method: 'POST',
@@ -194,18 +314,37 @@ export function RedirectsPanel({ projectId }: { projectId: string }) {
         },
         body: JSON.stringify({
           projectId,
-          redirects: validRows.map(({ issues: _issues, ...redirect }) => redirect),
+          redirects: classified.changedRows.map(
+            ({ issues: _issues, warnings: _warnings, ...redirect }) => redirect
+          ),
         }),
       });
-      const result = await res.json();
+      const result = (await res.json()) as {
+        succeeded: number;
+        errors: { sourceUrl: string; message: string }[];
+        error?: string;
+      };
       if (!res.ok) throw new Error(result.error ?? `Import failed (${res.status})`);
-      setImportResult(result);
+
+      const updates = classified.previewRows.filter((r) => r.action === 'update').length;
+      const creates = classified.previewRows.filter((r) => r.action === 'create').length;
+      const skipped = classified.previewRows.filter((r) => r.action === 'error').length;
+      setDoneSummary(
+        `${result.succeeded} of ${updates + creates} changes written (${updates} updates, ${creates} new)` +
+          (skipped ? `, ${skipped} rows skipped due to errors.` : '.')
+      );
+      setDoneErrorDetail(
+        result.errors.length > 0
+          ? `${result.errors.length} failed — first error: ${result.errors[0].sourceUrl}: ${result.errors[0].message}`
+          : undefined
+      );
+      setImportStage('done');
       if (result.errors.length === 0) {
         toast.success(`Imported ${result.succeeded} redirects into Uniform.`);
       } else {
         toast.warning(`Imported ${result.succeeded} redirects; ${result.errors.length} failed.`);
       }
-      refetch();
+      void refetch();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Import failed.');
     } finally {
@@ -220,156 +359,86 @@ export function RedirectsPanel({ projectId }: { projectId: string }) {
   return (
     <Stack gap="var(--spacing-lg)">
       {/* ------- Export ------- */}
-      <section
-        aria-label="Export redirects"
-        css={css`
-          display: flex;
-          flex-direction: column;
-          gap: var(--spacing-md);
-          padding: var(--spacing-md);
-          border: 1px solid var(--gray-200);
-          border-radius: var(--rounded-lg);
-          background: var(--white);
-        `}
-      >
-        <PanelHeader
+      <PanelSection label="Export redirects">
+        <SectionHeader
           title="Export redirects to CSV"
-          description={
-            data
-              ? `${data.redirects.length} redirects found in this project.`
-              : 'Downloads all redirects with their source, target, status code, and flags.'
-          }
+          description="Columns: ID, Source URL, Target URL, Status Code, and the boolean redirect flags."
           actions={
-            <Button
-              buttonType="primary"
-              disabled={!data || data.redirects.length === 0}
-              onClick={handleExport}
-            >
-              <Icon icon="software-download" size="1rem" iconColor="currentColor" />
-              Download CSV
-            </Button>
+            <>
+              <Button
+                buttonType="primary"
+                disabled={!data || redirects.length === 0}
+                onClick={handleExport}
+              >
+                <Icon icon="software-download" size="1rem" iconColor="currentColor" />
+                Download CSV
+              </Button>
+              {data && redirects.length > 0 ? (
+                <Caption>
+                  {HEADERS.length} columns × {redirects.length} rows
+                </Caption>
+              ) : null}
+            </>
           }
         />
 
         {isLoading ? <LoadingRow label="Loading redirects…" /> : null}
 
-        {data && data.redirects.length === 0 ? (
-          <Callout type="info" title="No redirects yet" compact>
-            This project has no redirects. Import a CSV below to create some — required columns:
-            Source URL, Target URL, Status Code.
-          </Callout>
-        ) : null}
-
-        {data && data.redirects.length > 0 ? (
-          <ResponsiveTableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCellHead>Source URL</TableCellHead>
-                  <TableCellHead>Target URL</TableCellHead>
-                  <TableCellHead>Status</TableCellHead>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {data.redirects.slice(0, 30).map((r, i) => (
-                  <TableRow key={r.id ?? i}>
-                    <TableCellData>
-                      <code
-                        css={css`
-                          font-size: var(--fs-sm);
-                        `}
-                      >
-                        {r.sourceUrl}
-                      </code>
-                    </TableCellData>
-                    <TableCellData>
-                      <code
-                        css={css`
-                          font-size: var(--fs-sm);
-                        `}
-                      >
-                        {r.targetUrl}
-                      </code>
-                    </TableCellData>
-                    <TableCellData>
-                      <Chip
-                        theme={r.targetStatusCode === 301 ? 'utility-success' : 'utility-info'}
-                        text={String(r.targetStatusCode)}
-                      />
-                    </TableCellData>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            {data.redirects.length > 30 ? (
-              <p
+        {data && redirects.length > 0 ? (
+          <Stack gap="var(--spacing-sm)">
+            <div
+              css={css`
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: var(--spacing-sm);
+              `}
+            >
+              <div
                 css={css`
-                  margin: var(--spacing-xs) 0 0;
-                  font-size: var(--fs-sm);
-                  color: var(--typography-light);
+                  flex: 1 1 240px;
                 `}
               >
-                Showing the first 30 of {data.redirects.length} redirects. The CSV export includes
-                all of them.
-              </p>
-            ) : null}
-          </ResponsiveTableContainer>
-        ) : null}
-      </section>
-
-      {/* ------- Import ------- */}
-      <section
-        aria-label="Import redirects"
-        css={css`
-          display: flex;
-          flex-direction: column;
-          gap: var(--spacing-md);
-          padding: var(--spacing-md);
-          border: 1px solid var(--gray-200);
-          border-radius: var(--rounded-lg);
-          background: var(--white);
-        `}
-      >
-        <PanelHeader
-          title="Import redirects from CSV"
-          description="Upload a CSV with columns: ID (optional, for updates), Source URL, Target URL, Status Code, and optional boolean flags. Rows with an ID update existing redirects; rows without create new ones."
-          actions={
-            <CsvFilePicker label="Choose CSV file" disabled={importing} onFile={handleFile} />
-          }
-        />
-
-        {importError ? <Banner type="danger">{importError}</Banner> : null}
-
-        {importRows ? (
-          <>
-            <Callout type="caution" title="Review before importing" compact>
-              {`"${importFileName}" contains ${importRows.length} rows: ${validRows.length} valid` +
-                (invalidRows.length > 0
-                  ? `, ${invalidRows.length} with issues (they will be skipped)`
-                  : '') +
-                '. Importing updates or creates redirects in Uniform.'}
-            </Callout>
+                <InputKeywordSearch
+                  aria-label="Filter redirects"
+                  placeholder="Filter redirects by source or target URL…"
+                  value={search}
+                  onSearchTextChanged={(v) => {
+                    setSearch(v);
+                    setOffset(0);
+                  }}
+                  onClear={() => {
+                    setSearch('');
+                    setOffset(0);
+                  }}
+                  disabledFieldSubmission
+                />
+              </div>
+              <Caption>
+                {filtered.length} of {redirects.length} redirects
+              </Caption>
+            </div>
 
             <ResponsiveTableContainer>
               <Table>
                 <TableHead>
                   <TableRow>
-                    <TableCellHead>Source URL</TableCellHead>
-                    <TableCellHead>Target URL</TableCellHead>
-                    <TableCellHead>Status</TableCellHead>
-                    <TableCellHead>Valid</TableCellHead>
+                    <TableCellHead>Source</TableCellHead>
+                    <TableCellHead>Target</TableCellHead>
+                    <TableCellHead>Code</TableCellHead>
+                    <TableCellHead>Query string</TableCellHead>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {importRows.slice(0, 15).map((r, i) => (
-                    <TableRow key={`${r.sourceUrl}-${i}`}>
+                  {pageRows.map((r, i) => (
+                    <TableRow key={r.id ?? `${r.sourceUrl}-${i}`}>
                       <TableCellData>
                         <code
                           css={css`
                             font-size: var(--fs-sm);
                           `}
                         >
-                          {r.sourceUrl || '—'}
+                          {r.sourceUrl}
                         </code>
                       </TableCellData>
                       <TableCellData>
@@ -378,78 +447,98 @@ export function RedirectsPanel({ projectId }: { projectId: string }) {
                             font-size: var(--fs-sm);
                           `}
                         >
-                          {r.targetUrl || '—'}
+                          {r.targetUrl}
                         </code>
                       </TableCellData>
-                      <TableCellData>{r.targetStatusCode ?? '—'}</TableCellData>
                       <TableCellData>
-                        {r.issues.filter(isBlocking).length === 0 ? (
-                          r.issues.length > 0 ? (
-                            <Chip theme="utility-caution" text={r.issues[0]} />
-                          ) : (
-                            <Chip theme="utility-success" text="Valid" />
-                          )
-                        ) : (
-                          <Chip theme="utility-danger" text={r.issues[0]} />
-                        )}
+                        <Chip
+                          theme={
+                            r.targetStatusCode === 301 || r.targetStatusCode === 308
+                              ? 'utility-success'
+                              : 'utility-info'
+                          }
+                          text={`${r.targetStatusCode} ${codeLabel(r.targetStatusCode)}`.trim()}
+                        />
+                      </TableCellData>
+                      <TableCellData>
+                        <span
+                          css={css`
+                            color: ${r.sourceRetainQuerystring
+                              ? 'var(--typography-base)'
+                              : 'var(--typography-light)'};
+                          `}
+                        >
+                          {r.sourceRetainQuerystring ? 'Preserved' : '—'}
+                        </span>
                       </TableCellData>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-              {importRows.length > 15 ? (
+              {filtered.length === 0 ? (
                 <p
                   css={css`
-                    margin: var(--spacing-xs) 0 0;
+                    margin: 0;
+                    padding: var(--spacing-lg);
+                    text-align: center;
                     font-size: var(--fs-sm);
                     color: var(--typography-light);
                   `}
                 >
-                  Showing the first 15 of {importRows.length} rows.
+                  No redirects match "{search}".
                 </p>
               ) : null}
+              <PaginationFooter
+                total={filtered.length}
+                pageSize={PAGE_SIZE}
+                offset={safeOffset}
+                onOffsetChange={setOffset}
+              />
             </ResponsiveTableContainer>
-
-            <div
-              css={css`
-                display: flex;
-                gap: var(--spacing-sm);
-              `}
-            >
-              <Button
-                buttonType="primary"
-                disabled={importing || validRows.length === 0}
-                onClick={handleImport}
-              >
-                <Icon icon="software-upload" size="1rem" iconColor="currentColor" />
-                {importing ? 'Importing…' : `Import ${validRows.length} redirects into Uniform`}
-              </Button>
-              <Button
-                buttonType="ghost"
-                disabled={importing}
-                onClick={() => {
-                  setImportRows(null);
-                  setImportFileName('');
-                  setImportResult(null);
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </>
+          </Stack>
         ) : null}
 
-        {importResult ? (
-          importResult.errors.length === 0 ? (
-            <Banner type="success">Successfully imported {importResult.succeeded} redirects.</Banner>
-          ) : (
-            <Banner type="danger">
-              Imported {importResult.succeeded} redirects, {importResult.errors.length} failed.
-              First error: {importResult.errors[0].sourceUrl} — {importResult.errors[0].message}
-            </Banner>
-          )
+        {data && redirects.length === 0 ? (
+          <Callout type="info" title="No redirects in this project yet" compact>
+            Create redirects in bulk by importing a CSV below. Required columns: Source URL, Target
+            URL, Status Code. <Link text="Download a template CSV" href="#" onClick={handleTemplate} />
+          </Callout>
         ) : null}
-      </section>
+      </PanelSection>
+
+      {/* ------- Import ------- */}
+      <PanelSection label="Import redirects">
+        <SectionHeader
+          title="Import redirects from CSV"
+          description={
+            <>
+              Rows with an ID update existing redirects; rows without an ID create new ones. You
+              will review every change before anything is written.{' '}
+              <Link text="Download a template CSV" href="#" onClick={handleTemplate} />
+            </>
+          }
+        />
+
+        {importError ? <Banner type="danger">{importError}</Banner> : null}
+
+        {importStage === 'idle' ? <CsvDropzone disabled={!data} onFile={handleFile} /> : null}
+
+        {importStage === 'preview' && classified ? (
+          <ImportPreview
+            fileName={importFileName}
+            rows={classified.previewRows}
+            unchangedCount={classified.unchanged}
+            monoNames
+            applying={importing}
+            onCancel={resetImport}
+            onApply={handleApply}
+          />
+        ) : null}
+
+        {importStage === 'done' ? (
+          <ImportDone summary={doneSummary} errorDetail={doneErrorDetail} onReset={resetImport} />
+        ) : null}
+      </PanelSection>
     </Stack>
   );
 }
