@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "uniform-mesh": {
+      "source": "uniformdev/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/uniform-mesh/SKILL.md",
+      "computedHash": "6187107af9a67ee06653df3a9bd871ca7145f163202cec81b8c04bdaac971bbc"
+    }
+  }
+}

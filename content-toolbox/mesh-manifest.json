@@ -1,0 +1,21 @@
+{
+  "type": "content-toolbox",
+  "displayName": "Content Toolbox",
+  "logoIconUrl": "http://localhost:9000/tools-badge.png",
+  "badgeIconUrl": "http://localhost:9000/tools-badge.png",
+  "category": "unknown",
+  "baseLocationUrl": "http://localhost:9000",
+  "locations": {
+    "settings": {
+      "url": "/"
+    },
+    "projectTools": [
+      {
+        "id": "content-ops-toolkit",
+        "name": "Content Ops Toolkit",
+        "url": "/content-ops",
+        "iconUrl": "/tools-badge.png"
+      }
+    ]
+  }
+}
