@@ -16,11 +16,11 @@
   "dependencies": {
     "@emotion/react": "11.14.0",
     "@tanstack/react-query": "5.91.3",
-    "@uniformdev/cli": "20.72.3",
-    "@uniformdev/design-system": "20.72.3",
-    "@uniformdev/mesh-sdk": "20.72.3",
-    "@uniformdev/mesh-sdk-react": "20.72.3",
-    "next": "16.2.11",
+    "@uniformdev/cli": "20.74.4",
+    "@uniformdev/design-system": "20.74.4",
+    "@uniformdev/mesh-sdk": "20.74.4",
+    "@uniformdev/mesh-sdk-react": "20.74.4",
+    "next": "16.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
