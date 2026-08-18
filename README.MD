@@ -79,6 +79,81 @@ pnpm dev        # next dev --webpack --experimental-https on https://localhost:9
 
 Open `https://localhost:9000` once in your browser and accept the self-signed certificate (otherwise the dashboard iframe fails silently), then open your project → **Tools → Content Ops Toolkit**.
 
+## Deploy to production (AWS or similar)
+
+This is **not** a static site. Identity delegation runs on the server (`/api/session`, `/api/status`, `/api/uniform/*`): the browser never sees the integration secret or the user token. You need a **Node.js 20+ process** behind **HTTPS**, not S3 / CloudFront static hosting.
+
+Any host that can run `next start` works — AWS App Runner, ECS/Fargate + ALB, Elastic Beanstalk, EC2, Amplify Hosting (SSR), or a VM at another cloud. The Uniform dashboard loads the app in an iframe, so the browser must be able to reach both `https://uniform.app` (or `https://eu.uniform.app`) and your public app URL.
+
+Work from `content-toolbox/`.
+
+### 1. What the host must do
+
+1. Install and build: `pnpm install --frozen-lockfile && pnpm build`
+2. Start the server: `pnpm start` (binds to **port 9000** — map your load balancer / container port to `9000`, or run `pnpm exec next start -p $PORT` if the platform injects `PORT`)
+3. Terminate TLS in front of it (ALB, CloudFront, App Runner custom domain, nginx, etc.). Delegation cookies are `Secure; SameSite=None; Partitioned` — browsers will not send them on `http://`.
+4. If you put CloudFront / a WAF / extra response headers in front of the app, do **not** send `X-Frame-Options: DENY` or a CSP that blocks framing. The dashboard embeds this app; allow `frame-ancestors https://uniform.app https://*.uniform.app`. Do not strip `Cookie` / `Set-Cookie`.
+5. If you run more than one instance behind a load balancer, give **every instance the same** `MESH_SESSION_SECRET`. The session cookie is encrypted on the server; a different secret on another replica looks like "no session". Sticky sessions are not required.
+
+### 2. Environment variables on the host
+
+Set these as **runtime** secrets on the service (ECS task definition, App Runner, Elastic Beanstalk, etc.). Do not bake them into the image. `UNIFORM_API_KEY` / `UNIFORM_TEAM_ID` / `UNIFORM_PROJECT_ID` are **CLI-only** (register/install on your laptop) — they are not used at runtime and should not be on the server.
+
+| Variable | Required on the host | Purpose |
+| --- | --- | --- |
+| `UNIFORM_API_HOST` | yes | `https://uniform.app` (US) or `https://eu.uniform.app` (EU). Must match the team's region. |
+| `UNIFORM_INTEGRATION_ID` | yes | Integration definition UUID from Team → Settings → Custom Integrations → Credentials. |
+| `UNIFORM_INTEGRATION_SECRET` | yes | Integration app secret. Server only. Shown **once** when you generate/rotate it in the dashboard. |
+| `MESH_SESSION_SECRET` | yes | ≥32-byte random string that encrypts the session cookie. Generate once and keep it stable: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `MESH_ALLOWED_ORIGINS` | yes | Comma-separated **public HTTPS origin(s) of this app** (scheme + host, no path). Example: `https://content-ops.example.com`. If users can hit both a custom domain and the AWS default hostname, list both. A mismatch here is a `403` on every POST. |
+
+Example production values (replace the host):
+
+```
+UNIFORM_API_HOST=https://uniform.app
+UNIFORM_INTEGRATION_ID=<uuid-from-dashboard>
+UNIFORM_INTEGRATION_SECRET=<shown-once-on-generate>
+MESH_SESSION_SECRET=<64-hex-chars>
+MESH_ALLOWED_ORIGINS=https://content-ops.example.com
+```
+
+`MESH_ALLOWED_ORIGINS` is the origin of **this** Mesh app (the iframe), not `https://uniform.app`. The browser POSTs from the iframe to `/api/session` on the same host.
+
+### 3. Point Uniform at the deployed URLs (`mesh-manifest.prod.json`)
+
+Uniform does not discover your host. The integration definition stores the URLs. This repo keeps two manifests:
+
+| File | When to register |
+| --- | --- |
+| `mesh-manifest.json` | Local HTTPS (`https://localhost:9000`) |
+| `mesh-manifest.prod.json` | Deployed host |
+
+Edit `mesh-manifest.prod.json` and replace every occurrence of the old host with your public origin (no trailing slash). The fields that must be absolute URLs:
+
+| Field | Example after deploy |
+| --- | --- |
+| `baseLocationUrl` | `https://content-ops.example.com` |
+| `logoIconUrl` | `https://content-ops.example.com/tools-badge.png` |
+| `badgeIconUrl` | `https://content-ops.example.com/tools-badge.png` |
+| `locations.projectTools[].iconUrl` | `https://content-ops.example.com/tools-badge.png` |
+
+Leave these as-is unless you change the app routes:
+
+- `locations.settings.url` → `/`
+- `locations.projectTools[].url` → `/content-ops` (resolved against `baseLocationUrl`)
+- `"type": "content-toolbox"` (this is the integration type id used by `pnpm install-to-project`)
+- `"identityDelegation": true` (required; the app secret is only issued when this is on)
+
+Then **re-register** the same integration definition so Uniform starts loading the iframe from the new host. From `content-toolbox/`, with `UNIFORM_API_KEY` and `UNIFORM_TEAM_ID` in your local `.env`:
+
+```bash
+pnpm exec uniform integration definition register ./mesh-manifest.prod.json
+```
+
+Or paste the updated JSON into Team → Settings → Custom Integrations. Re-registering updates the existing `content-toolbox` definition in place — you do **not** need to uninstall/reinstall the project if it is already installed.
+
+After that: open the public app URL once in the browser (confirm the cert is trusted), then open the project → **Tools → Content Ops Toolkit**. If the iframe is blank or stuck on "Connecting…", see [Troubleshooting](#troubleshooting).
+
 ## CSV formats
 
 
@@ -136,7 +211,8 @@ lib/
   delegationSessionCallbacks.ts  # browser-side checkActive / onSessionToken
   csrf.ts                    # x-mesh-csrf + origin allow-list guard
   csv.ts                     # dependency-free RFC 4180-ish CSV parse/serialize
-mesh-manifest.json           # integration manifest (projectTools location, identityDelegation)
+mesh-manifest.json           # local integration manifest (https://localhost:9000)
+mesh-manifest.prod.json      # production manifest — update URLs to the deployed host, then re-register
 ```
 
 ## Security notes
@@ -153,8 +229,8 @@ mesh-manifest.json           # integration manifest (projectTools location, iden
 | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm dev`                                                  | HTTPS dev server on port 9000 (webpack mode)                                                                                                              |
 | `pnpm dev:http`                                             | Plain HTTP dev server — delegation will **not** work; useful for UI-only work. Open `/dev-preview` for the toolkit with mocked data (no dashboard needed) |
-| `pnpm build` / `pnpm start`                                 | Production build / serve                                                                                                                                  |
-| `pnpm register-to-team` / `pnpm install-to-project`         | Register the manifest / enable on a project                                                                                                               |
+| `pnpm build` / `pnpm start`                                 | Production build / serve (`next start` on port 9000)                                                                                                      |
+| `pnpm register-to-team` / `pnpm install-to-project`         | Register the **local** manifest (`mesh-manifest.json`) / enable on a project. For production URLs: `pnpm exec uniform integration definition register ./mesh-manifest.prod.json` |
 | `pnpm unregister-from-team` / `pnpm uninstall-from-project` | Tear down                                                                                                                                                 |
 
 
@@ -168,7 +244,9 @@ mesh-manifest.json           # integration manifest (projectTools location, iden
 | Stuck on "Connecting to Uniform…"    | Cookie set but not sent back — you're on `http://`, or the self-signed cert isn't trusted yet. Serve HTTPS and open the app URL once directly. |
 | "Identity delegation is not enabled" | `sdk.getSessionToken()` returned nothing — enable delegation on the integration definition and re-register the manifest.                       |
 | `POST /api/session` → 500            | Wrong `UNIFORM_INTEGRATION_ID`/`SECRET`, or `UNIFORM_API_HOST` doesn't match your team's region.                                               |
-| API routes → 403                     | Request origin isn't in `MESH_ALLOWED_ORIGINS`, or the `x-mesh-csrf` header is missing.                                                        |
-| API routes → 401                     | No active delegation session — reload the tool so the provider re-runs the exchange.                                                           |
+| API routes → 403                     | Request origin isn't in `MESH_ALLOWED_ORIGINS` (after deploy, this must be the public HTTPS origin, not `https://localhost:9000`), or the `x-mesh-csrf` header is missing. |
+| API routes → 401                     | No active delegation session — reload the tool so the provider re-runs the exchange. If this happens only on one replica, `MESH_SESSION_SECRET` is not shared across instances. |
+| Iframe blank / refused to connect    | Manifest still points at localhost or the old host, TLS is broken, or a proxy sent `X-Frame-Options: DENY` / a CSP that blocks `uniform.app`. |
+| Toolkit still loads localhost        | You rebuilt the app but did not re-register `mesh-manifest.prod.json` (or paste it in the dashboard). Uniform caches the URLs on the integration definition, not in this repo. |
 
 
