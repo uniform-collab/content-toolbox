@@ -24,13 +24,19 @@ Built with Next.js (pages router), the Uniform design system, and `@uniformdev/m
 - The token pair lives in an encrypted `HttpOnly; Secure; SameSite=None; Partitioned` cookie and is proactively refreshed near expiry.
 - History logs show the actual editor as the actor, and authorization runs against their Uniform role.
 
+
+
 ## Quick start
+
+
 
 ### Prerequisites
 
 - Node.js 20+ and pnpm
 - A Uniform team + project, and a **team admin API key** (only for CLI registration)
 - **Identity delegation enabled** on the integration definition (Team → Settings → Custom Integrations) — the integration app secret is issued there once delegation is enabled
+
+
 
 ### 1. Install and configure
 
@@ -41,14 +47,18 @@ cp .env.example .env
 
 Fill in `.env`:
 
-| Variable | Purpose |
-|---|---|
-| `UNIFORM_API_KEY` / `UNIFORM_TEAM_ID` / `UNIFORM_PROJECT_ID` | Uniform CLI auth for the register/install scripts only — not used at runtime |
-| `UNIFORM_API_HOST` | `https://uniform.app` (US) or `https://eu.uniform.app` (EU) |
-| `UNIFORM_INTEGRATION_ID` | Integration definition ID (UUID) from the dashboard |
-| `UNIFORM_INTEGRATION_SECRET` | Integration app secret — server only, never shipped to the browser |
-| `MESH_SESSION_SECRET` | ≥32-byte random string that encrypts the session cookie. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-| `MESH_ALLOWED_ORIGINS` | Comma-separated origins allowed to call state-changing routes, e.g. `https://localhost:9000` |
+
+| Variable                                                     | Purpose                                                                                                                                       |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UNIFORM_API_KEY` / `UNIFORM_TEAM_ID` / `UNIFORM_PROJECT_ID` | Uniform CLI auth for the register/install scripts only — not used at runtime                                                                  |
+| `UNIFORM_API_HOST`                                           | `https://uniform.app` (US) or `https://eu.uniform.app` (EU)                                                                                   |
+| `UNIFORM_INTEGRATION_ID`                                     | Integration definition ID (UUID) from the dashboard                                                                                           |
+| `UNIFORM_INTEGRATION_SECRET`                                 | Integration app secret — server only, never shipped to the browser                                                                            |
+| `MESH_SESSION_SECRET`                                        | ≥32-byte random string that encrypts the session cookie. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `MESH_ALLOWED_ORIGINS`                                       | Comma-separated origins allowed to call state-changing routes, e.g. `https://localhost:9000`                                                  |
+
+
+
 
 ### 2. Register the integration
 
@@ -71,27 +81,35 @@ Open `https://localhost:9000` once in your browser and accept the self-signed ce
 
 ## CSV formats
 
+
+
 ### Project map export/import
 
-| Column | Import behavior |
-|---|---|
-| Node Name | required |
-| Node Type | required — `composition` or `placeholder` |
-| Path | required — must start with `/` |
-| Description, Order | optional |
-| Node ID | optional — rows with an ID update that node; without, upsert by path |
-| Composition ID | optional — binds the node to a composition |
-| Composition Name / Type, Publish Status | export-only, ignored on import |
-| `Param: <key>` columns | export-only, ignored on import |
+
+| Column                                  | Import behavior                                                      |
+| --------------------------------------- | -------------------------------------------------------------------- |
+| Node Name                               | required                                                             |
+| Node Type                               | required — `composition` or `placeholder`                            |
+| Path                                    | required — must start with `/`                                       |
+| Description, Order                      | optional                                                             |
+| Node ID                                 | optional — rows with an ID update that node; without, upsert by path |
+| Composition ID                          | optional — binds the node to a composition                           |
+| Composition Name / Type, Publish Status | export-only, ignored on import                                       |
+| `Param: <key>` columns                  | export-only, ignored on import                                       |
+
+
+
 
 ### Redirects export/import
 
-| Column | Import behavior |
-|---|---|
-| Source URL, Target URL | required |
-| Status Code | defaults to `301`; values outside 301/302/307/308 warn but don't block |
-| ID | optional — update existing vs. create new |
-| Retain Query String, Must Match Domain, Preserve Incoming Protocol, Preserve Incoming Domain, Merge Query String | optional booleans (`true`/`false`, `1`/`0`, `yes`/`no`) |
+
+| Column                                                                                                           | Import behavior                                                        |
+| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Source URL, Target URL                                                                                           | required                                                               |
+| Status Code                                                                                                      | defaults to `301`; values outside 301/302/307/308 warn but don't block |
+| ID                                                                                                               | optional — update existing vs. create new                              |
+| Retain Query String, Must Match Domain, Preserve Incoming Protocol, Preserve Incoming Domain, Merge Query String | optional booleans (`true`/`false`, `1`/`0`, `yes`/`no`)                |
+
 
 Header matching is tolerant (case- and punctuation-insensitive), so a re-uploaded export always round-trips.
 
@@ -121,8 +139,6 @@ lib/
 mesh-manifest.json           # integration manifest (projectTools location, identityDelegation)
 ```
 
-The `reference-lib/`, `pages/reference/`, `edgehancer/`, `dataResourceEditor/`, and `propertyEditor/` folders come from the Mesh starter kit and demonstrate other location types and edge hooks — see `mesh-manifest.reference.json`. They are not used by the toolkit.
-
 ## Security notes
 
 - The integration secret and delegation tokens exist **only on the server**; the browser holds an encrypted, unreadable cookie.
@@ -132,20 +148,27 @@ The `reference-lib/`, `pages/reference/`, `edgehancer/`, `dataResourceEditor/`, 
 
 ## Scripts
 
-| Script | What it does |
-|---|---|
-| `pnpm dev` | HTTPS dev server on port 9000 (webpack mode) |
-| `pnpm dev:http` | Plain HTTP dev server — delegation will **not** work; useful for UI-only work. Open `/dev-preview` for the toolkit with mocked data (no dashboard needed) |
-| `pnpm build` / `pnpm start` | Production build / serve |
-| `pnpm register-to-team` / `pnpm install-to-project` | Register the manifest / enable on a project |
-| `pnpm unregister-from-team` / `pnpm uninstall-from-project` | Tear down |
+
+| Script                                                      | What it does                                                                                                                                              |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                                                  | HTTPS dev server on port 9000 (webpack mode)                                                                                                              |
+| `pnpm dev:http`                                             | Plain HTTP dev server — delegation will **not** work; useful for UI-only work. Open `/dev-preview` for the toolkit with mocked data (no dashboard needed) |
+| `pnpm build` / `pnpm start`                                 | Production build / serve                                                                                                                                  |
+| `pnpm register-to-team` / `pnpm install-to-project`         | Register the manifest / enable on a project                                                                                                               |
+| `pnpm unregister-from-team` / `pnpm uninstall-from-project` | Tear down                                                                                                                                                 |
+
+
+
 
 ## Troubleshooting
 
-| Symptom | Likely cause |
-|---|---|
-| Stuck on "Connecting to Uniform…" | Cookie set but not sent back — you're on `http://`, or the self-signed cert isn't trusted yet. Serve HTTPS and open the app URL once directly. |
-| "Identity delegation is not enabled" | `sdk.getSessionToken()` returned nothing — enable delegation on the integration definition and re-register the manifest. |
-| `POST /api/session` → 500 | Wrong `UNIFORM_INTEGRATION_ID`/`SECRET`, or `UNIFORM_API_HOST` doesn't match your team's region. |
-| API routes → 403 | Request origin isn't in `MESH_ALLOWED_ORIGINS`, or the `x-mesh-csrf` header is missing. |
-| API routes → 401 | No active delegation session — reload the tool so the provider re-runs the exchange. |
+
+| Symptom                              | Likely cause                                                                                                                                   |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stuck on "Connecting to Uniform…"    | Cookie set but not sent back — you're on `http://`, or the self-signed cert isn't trusted yet. Serve HTTPS and open the app URL once directly. |
+| "Identity delegation is not enabled" | `sdk.getSessionToken()` returned nothing — enable delegation on the integration definition and re-register the manifest.                       |
+| `POST /api/session` → 500            | Wrong `UNIFORM_INTEGRATION_ID`/`SECRET`, or `UNIFORM_API_HOST` doesn't match your team's region.                                               |
+| API routes → 403                     | Request origin isn't in `MESH_ALLOWED_ORIGINS`, or the `x-mesh-csrf` header is missing.                                                        |
+| API routes → 401                     | No active delegation session — reload the tool so the provider re-runs the exchange.                                                           |
+
+
