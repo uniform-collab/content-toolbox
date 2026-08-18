@@ -68,6 +68,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, auth: Unifo
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
+    // User-scoped data must never be cached by a CDN or shared proxy.
+    res.setHeader('Cache-Control', 'no-store, private');
+
     if (req.method !== 'GET' && req.method !== 'POST') {
       res.setHeader('Allow', 'GET, POST');
       res.status(405).json({ error: `Method ${req.method} not allowed.` });
@@ -99,7 +102,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       await handlePost(req, res, auth);
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unexpected error';
-    res.status(500).json({ error: message });
+    // Upstream error bodies can contain internal detail — log them, return a generic message.
+    // eslint-disable-next-line no-console
+    console.error('Redirects route failed', err);
+    res.status(500).json({ error: 'The request failed. Check the server log for details.' });
   }
 }

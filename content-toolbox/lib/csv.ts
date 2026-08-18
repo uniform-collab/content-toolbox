@@ -64,15 +64,25 @@ export function parseCsv(text: string): string[][] {
     rows.push(row)
   }
 
-  // Drop fully-empty trailing rows
-  return rows.filter((r) => r.some((cell) => cell.trim() !== ""))
+  // Drop fully-empty trailing rows, then undo the formula-injection guard that
+  // toCsv adds on export (leading apostrophe before = + - @ tab CR) so a
+  // re-imported export round-trips to the original value.
+  return rows
+    .filter((r) => r.some((cell) => cell.trim() !== ""))
+    .map((r) => r.map((cell) => (/^'[=+\-@\t\r]/.test(cell) ? cell.slice(1) : cell)))
 }
 
 type CsvCell = string | number | boolean | null | undefined
 
 function escapeCell(value: CsvCell): string {
   if (value === null || value === undefined) return ""
-  const str = String(value)
+  let str = String(value)
+  // Guard against CSV formula injection: Excel/Sheets execute cells that start
+  // with = + - @ (or tab/CR). Prefix with an apostrophe so they render as text.
+  // Only strings are guarded so negative numbers stay numeric.
+  if (typeof value === "string" && /^[=+\-@\t\r]/.test(str)) {
+    str = "'" + str
+  }
   if (/[",\r\n]/.test(str)) {
     return '"' + str.replace(/"/g, '""') + '"'
   }

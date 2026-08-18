@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  dompurify: ^3.4.13
+
 importers:
 
   .:
@@ -14,9 +17,6 @@ importers:
       '@tanstack/react-query':
         specifier: 5.91.3
         version: 5.91.3(react@19.2.8)
-      '@uniformdev/cli':
-        specifier: 20.74.4
-        version: 20.74.4(@types/node@24.3.1)(typescript@5.9.2)
       '@uniformdev/design-system':
         specifier: 20.74.4
         version: 20.74.4(@emotion/react@11.14.0(@types/react@19.2.2)(react@19.2.8))(@types/react@19.2.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(yjs@13.6.31)
@@ -45,6 +45,9 @@ importers:
       '@types/react-dom':
         specifier: 19.2.2
         version: 19.2.2(@types/react@19.2.2)
+      '@uniformdev/cli':
+        specifier: 20.74.4
+        version: 20.74.4(@types/node@24.3.1)(typescript@5.9.2)
       eslint:
         specifier: 9.35.0
         version: 9.35.0(jiti@1.21.7)
@@ -1715,8 +1718,8 @@ packages:
   dom-helpers@5.2.1:
     resolution: {integrity: sha512-nRCa7CK3VTrM2NmGkIy4cbK7IZlgBE/PYMn55rrXefr5xXDP0LdtfPnblFDoVdcAfslJ7or6iqAUnx0CCGIWQA==}
 
-  dompurify@3.2.7:
-    resolution: {integrity: sha512-WhL/YuveyGXJaerVlMYGWhvQswa7myDG17P7Vu65EWC05o8vfeNbvNf4d/BOvH99+ZW+LlQsc1GDKMa1vNK6dw==}
+  dompurify@3.4.13:
+    resolution: {integrity: sha512-2vmYIoqjze2d+kakP8S/nS5shfsl587kzwEjcGlTdiksUVgFHnFCsLYDVj/JNqJVOQZGSYBTmuycv0PodwmnMQ==}
 
   dotenv@17.4.2:
     resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
@@ -5132,7 +5135,7 @@ snapshots:
       '@babel/runtime': 7.29.7
       csstype: 3.2.3
 
-  dompurify@3.2.7:
+  dompurify@3.4.13:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
@@ -6099,7 +6102,7 @@ snapshots:
 
   monaco-editor@0.55.1:
     dependencies:
-      dompurify: 3.2.7
+      dompurify: 3.4.13
       marked: 14.0.0
 
   ms@2.1.3: {}

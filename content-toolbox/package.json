@@ -16,7 +16,6 @@
   "dependencies": {
     "@emotion/react": "11.14.0",
     "@tanstack/react-query": "5.91.3",
-    "@uniformdev/cli": "20.74.4",
     "@uniformdev/design-system": "20.74.4",
     "@uniformdev/mesh-sdk": "20.74.4",
     "@uniformdev/mesh-sdk-react": "20.74.4",
@@ -26,10 +25,16 @@
   },
   "devDependencies": {
     "@types/node": "24.3.1",
+    "@uniformdev/cli": "20.74.4",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "eslint": "9.35.0",
     "eslint-config-next": "16.0.10",
     "typescript": "5.9.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "dompurify": "^3.4.13"
+    }
   }
 }

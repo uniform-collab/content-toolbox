@@ -222,6 +222,18 @@ mesh-manifest.prod.json      # production manifest — update URLs to the deploy
 - All state-changing routes verify the `x-mesh-csrf` header **and** an `Origin`/`Referer` allow-list (`MESH_ALLOWED_ORIGINS`), because `SameSite=None` removes the browser's default CSRF protection.
 - Do not weaken the cookie flags for local development — run HTTPS locally instead.
 
+### Security hardening (response headers)
+
+The app itself does not send framing or content-type headers — set them on whatever terminates TLS in front of it (ALB + CloudFront response-header policy, nginx, etc.):
+
+| Header | Value | Why |
+| --- | --- | --- |
+| `Content-Security-Policy` | `frame-ancestors https://uniform.app https://*.uniform.app` | Only the Uniform dashboard may embed the app. Without it any site can frame the tool; the `Partitioned` cookie already blocks a framed session in modern browsers, so this is defense in depth against clickjacking in browsers without cookie partitioning. Do **not** use `X-Frame-Options: DENY` — it has no allow-list form and breaks the dashboard iframe. |
+| `X-Content-Type-Options` | `nosniff` | Stops MIME sniffing of responses. |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Keeps app URLs (and any query strings) out of cross-origin referrers. |
+
+If nothing in front of the app can set headers, add the same three via `headers()` in `next.config.js` instead — but keep them in one place, or a stricter proxy value silently wins.
+
 ## Scripts
 
 
