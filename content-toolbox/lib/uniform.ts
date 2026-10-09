@@ -236,7 +236,11 @@ const INTEGRATION_TYPE = process.env.MESH_INTEGRATION_TYPE ?? "content-toolbox"
 
 /**
  * Reads this integration's settings from the project installation. Throws when
- * the settings cannot be read, so callers can fail closed on write paths.
+ * the settings cannot be read — including when no single installation matches
+ * the type — so callers can fail closed on write paths.
+ *
+ * The API filters by exact type; the returned type string is not compared here
+ * because team-specific integrations can be returned under a resolved name.
  */
 export async function getToolkitSettings(
   auth: UniformAuth,
@@ -244,12 +248,15 @@ export async function getToolkitSettings(
   const data = await uniformFetch<{
     results?: { type: string; data?: Record<string, unknown> }[]
   }>(auth, "/api/v1/integration-installations", {
-    searchParams: { type: INTEGRATION_TYPE },
+    searchParams: { type: INTEGRATION_TYPE, exactType: "true" },
   })
-  const install = (data.results ?? []).find(
-    (r) => r.type === INTEGRATION_TYPE || r.type.startsWith(INTEGRATION_TYPE),
-  )
-  return (install?.data ?? {}) as ToolkitSettings
+  const results = data.results ?? []
+  if (results.length !== 1) {
+    throw new Error(
+      `Expected 1 installation of integration type "${INTEGRATION_TYPE}", found ${results.length}.`,
+    )
+  }
+  return (results[0].data ?? {}) as ToolkitSettings
 }
 
 // ---------- Redirects ----------
