@@ -3,7 +3,8 @@ import { Theme } from '@uniformdev/design-system';
 import type { NextPage } from 'next';
 import { useEffect, useState } from 'react';
 
-import { ContentOpsToolkit } from '../components/content-ops-toolkit';
+import { ContentOpsToolkit, type ToolkitSettings } from '../components/content-ops-toolkit';
+import { SettingsForm } from '../components/settings-form';
 import { PageShell } from '../components/ui';
 
 /**
@@ -113,6 +114,8 @@ const queryClient = new QueryClient();
 
 const DevPreviewPage: NextPage = () => {
   const [ready, setReady] = useState(false);
+  const [view, setView] = useState<'toolkit' | 'settings'>('toolkit');
+  const [settings, setSettings] = useState<ToolkitSettings>({ allowRedirectsImport: false });
 
   useEffect(() => {
     const realFetch = window.fetch.bind(window);
@@ -132,6 +135,8 @@ const DevPreviewPage: NextPage = () => {
       }
       return realFetch(input, init);
     };
+    // /dev-preview?view=settings renders the integration settings form instead.
+    setView(new URLSearchParams(window.location.search).get('view') === 'settings' ? 'settings' : 'toolkit');
     setReady(true);
   }, []);
 
@@ -141,11 +146,11 @@ const DevPreviewPage: NextPage = () => {
     <QueryClientProvider client={queryClient}>
       <Theme />
       <PageShell>
-        <ContentOpsToolkit
-          projectId="preview"
-          defaultLocale="en-US"
-          settings={{ allowRedirectsImport: false }}
-        />
+        {view === 'settings' ? (
+          <SettingsForm value={settings} isReadOnly={false} onSave={setSettings} />
+        ) : (
+          <ContentOpsToolkit projectId="preview" defaultLocale="en-US" settings={settings} />
+        )}
       </PageShell>
     </QueryClientProvider>
   );
