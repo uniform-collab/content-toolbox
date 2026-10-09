@@ -1,28 +1,27 @@
-import { Callout, Heading, Paragraph, VerticalRhythm } from '@uniformdev/design-system';
+import { useMeshLocation } from '@uniformdev/mesh-sdk-react';
 import type { NextPage } from 'next';
 
+import type { ToolkitSettings } from '../components/content-ops-toolkit';
+import { SettingsForm } from '../components/settings-form';
 import { PageShell } from '../components/ui';
 
 /**
- * Settings location: shown when the integration is opened from
- * Team → Settings → Integrations. The toolkit itself lives in the
- * project tool location (/content-ops).
+ * Settings location: shown when the integration is opened from the project's
+ * integration settings. The toolkit itself lives in the project tool location
+ * (/content-ops).
  */
-const SettingsPage: NextPage = () => (
-  <PageShell>
-    <VerticalRhythm gap="md">
-      <Heading level={4}>Content Toolbox</Heading>
-      <Paragraph>
-        Bulk content operations for this project: export and import project map nodes and redirects
-        as CSV. Open it from the <strong>Tools</strong> section of your project as{' '}
-        <strong>Content Ops Toolkit</strong>.
-      </Paragraph>
-      <Callout type="info" title="Requirements" compact>
-        Identity delegation must be enabled for this integration so all reads and writes run as the
-        signed-in user with their permissions.
-      </Callout>
-    </VerticalRhythm>
-  </PageShell>
-);
+const SettingsPage: NextPage = () => {
+  const { value, setValue, isReadOnly } = useMeshLocation<'settings', ToolkitSettings>('settings');
+
+  return (
+    <PageShell>
+      <SettingsForm
+        value={value}
+        isReadOnly={isReadOnly}
+        onSave={(next) => setValue(() => ({ newValue: next }))}
+      />
+    </PageShell>
+  );
+};
 
 export default SettingsPage;

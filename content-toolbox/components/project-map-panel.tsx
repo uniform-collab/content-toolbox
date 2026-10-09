@@ -18,6 +18,7 @@ import {
   InputKeywordSearch,
   InputSelect,
   Link,
+  Switch,
   ResponsiveTableContainer,
   StatusBullet,
   Table,
@@ -27,6 +28,7 @@ import {
   TableHead,
   TableRow,
   toast,
+  Tooltip,
 } from "@uniformdev/design-system";
 import { useMemo, useState } from "react";
 
@@ -58,13 +60,40 @@ interface ExportNode {
   compositionName?: string;
   compositionType?: string;
   publishStatus: PublishStatus;
-  parameters: Record<string, string>;
+  parameters: Record<string, ParameterValue>;
+}
+
+/** Localized parameters fill `locales` instead of `value`. */
+interface ParameterValue {
+  value?: string;
+  locales?: Record<string, string>;
+}
+
+interface ParameterInfo {
+  key: string;
+  label: string;
+  compositionTypes: string[];
+  pageCount: number;
+  localized: boolean;
 }
 
 interface ProjectMapPayload {
   projectMap: { id: string; name: string };
-  parameterKeys: string[];
+  parameters: ParameterInfo[];
+  locales: string[];
   nodes: ExportNode[];
+}
+
+/** The value of a parameter on a node, in the given locale when the parameter is localized. */
+function resolveParam(
+  node: ExportNode,
+  key: string,
+  locale: string | undefined,
+): string {
+  const p = node.parameters[key];
+  if (!p) return "";
+  if (p.locales) return (locale && p.locales[locale]) || "";
+  return p.value ?? "";
 }
 
 interface ImportRow {
@@ -118,6 +147,7 @@ const BASE_HEADERS = BASE_COLUMNS.map((c) => c.header);
 /** Columns the importer needs to match rows back to nodes. */
 const REIMPORT_REQUIRED = new Set(["Node Name", "Node Type", "Path"]);
 
+/** Parameters selected by the "SEO set" preset: these names, or names that start with SEO_PARAM_PREFIX. */
 const SEO_PARAM_NAMES = new Set(
   [
     "pageTitle",
@@ -134,6 +164,14 @@ const SEO_PARAM_NAMES = new Set(
     "twitterImage",
   ].map((k) => k.toLowerCase()),
 );
+const SEO_PARAM_PREFIX = /^(seo|meta|og|twitter)/i;
+
+function isSeoParam(key: string): boolean {
+  return SEO_PARAM_NAMES.has(key.toLowerCase()) || SEO_PARAM_PREFIX.test(key);
+}
+
+const SEO_TOOLTIP =
+  "Selects the SEO parameters of this project: pageTitle, metaDescription, metaRobots, canonicalUrl, schemaType, and every parameter whose name starts with seo, meta, og or twitter.";
 
 function parseImportCsv(text: string): { rows: ImportRow[]; error?: string } {
   const parsed = parseCsv(text);
@@ -417,11 +455,23 @@ function BaseCellValue({ header, node }: { header: string; node: ExportNode }) {
 
 const PAGE_SIZE = 10;
 
-export function ProjectMapPanel({ projectId }: { projectId: string }) {
+export function ProjectMapPanel({
+  projectId,
+  defaultLocale,
+  importAllowed = true,
+}: {
+  projectId: string;
+  /** The project's default locale; selected first when localized parameters exist. */
+  defaultLocale?: string;
+  /** False when an admin turned off project map import in the integration settings. */
+  importAllowed?: boolean;
+}) {
   const { data, error, isLoading, refetch } = useProjectMapQuery(projectId);
 
   const [selected, setSelected] = useState<string[]>([]);
   const [paramSearch, setParamSearch] = useState("");
+  const [showEmptyParams, setShowEmptyParams] = useState(false);
+  const [localeChoice, setLocaleChoice] = useState<string | undefined>();
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -442,13 +492,42 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
     undefined,
   );
 
-  const paramList = useMemo(() => {
+  const locale = useMemo(() => {
+    if (!data || data.locales.length === 0) return undefined;
+    if (localeChoice && data.locales.includes(localeChoice)) return localeChoice;
+    if (defaultLocale && data.locales.includes(defaultLocale))
+      return defaultLocale;
+    return data.locales[0];
+  }, [data, localeChoice, defaultLocale]);
+
+  const paramByKey = useMemo(
+    () => new Map((data?.parameters ?? []).map((p) => [p.key, p])),
+    [data],
+  );
+  const emptyParamCount = useMemo(
+    () => (data?.parameters ?? []).filter((p) => p.pageCount === 0).length,
+    [data],
+  );
+
+  /** Visible parameters, grouped by composition type. A parameter can be in more than one group. */
+  const paramGroups = useMemo(() => {
     if (!data) return [];
     const q = paramSearch.trim().toLowerCase();
-    return q
-      ? data.parameterKeys.filter((k) => k.toLowerCase().includes(q))
-      : data.parameterKeys;
-  }, [data, paramSearch]);
+    const groups = new Map<string, ParameterInfo[]>();
+    for (const p of data.parameters) {
+      if (p.pageCount === 0 && !showEmptyParams) continue;
+      if (
+        q &&
+        !p.key.toLowerCase().includes(q) &&
+        !p.label.toLowerCase().includes(q)
+      )
+        continue;
+      for (const type of p.compositionTypes) {
+        groups.set(type, [...(groups.get(type) ?? []), p]);
+      }
+    }
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [data, paramSearch, showEmptyParams]);
 
   const toggleParam = (key: string) =>
     setSelected((prev) =>
@@ -499,14 +578,18 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
 
   const handleExport = () => {
     if (!data || columnCount === 0) return;
-    const params = data.parameterKeys.filter((k) => selected.includes(k));
+    const params = selected.filter((k) => paramByKey.has(k));
     const header = [
       ...activeBase.map((c) => c.header),
-      ...params.map((k) => `Param: ${k}`),
+      ...params.map((k) =>
+        paramByKey.get(k)?.localized && locale
+          ? `Param: ${k} (${locale})`
+          : `Param: ${k}`,
+      ),
     ];
     const rows = data.nodes.map((n) => [
       ...activeBase.map((c) => c.csv(n)),
-      ...params.map((k) => n.parameters[k] ?? ""),
+      ...params.map((k) => resolveParam(n, k, locale)),
     ]);
     downloadCsv(
       `project-map-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -553,6 +636,22 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
     setImportStage("idle");
     setImportRows([]);
     setImportError(null);
+  };
+
+  const handleSeoPreset = () => {
+    if (!data) return;
+    const seo = data.parameters
+      .filter((p) => p.pageCount > 0 && isSeoParam(p.key))
+      .map((p) => p.key)
+      .sort();
+    if (seo.length === 0) {
+      toast.info(
+        "No SEO parameters found on the pages in this project map. Search the list for the parameters that you use.",
+      );
+      return;
+    }
+    setSelected(seo);
+    toast.success(`Selected ${seo.length} SEO parameters.`);
   };
 
   const handleApply = async () => {
@@ -731,7 +830,8 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
                     `}
                   >
                     Pick composition parameters to append after the{" "}
-                    {BASE_HEADERS.length} base columns.
+                    {BASE_HEADERS.length} base columns. The list shows only
+                    parameters of pages in this project map.
                   </span>
                   <div
                     css={css`
@@ -739,28 +839,31 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
                       gap: var(--spacing-2xs);
                     `}
                   >
-                    <Button
-                      buttonType="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setSelected(
-                          data.parameterKeys
-                            .filter((k) => SEO_PARAM_NAMES.has(k.toLowerCase()))
-                            .sort(),
-                        )
-                      }
-                    >
-                      SEO set
-                    </Button>
-                    <Button
-                      buttonType="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setSelected([...data.parameterKeys].sort())
-                      }
-                    >
-                      All
-                    </Button>
+                    <Tooltip title={SEO_TOOLTIP}>
+                      <Button
+                        buttonType="ghost"
+                        size="sm"
+                        onClick={handleSeoPreset}
+                      >
+                        SEO set
+                      </Button>
+                    </Tooltip>
+                    <Tooltip title="Selects every parameter that has a value on at least one page.">
+                      <Button
+                        buttonType="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setSelected(
+                            data.parameters
+                              .filter((p) => p.pageCount > 0)
+                              .map((p) => p.key)
+                              .sort(),
+                          )
+                        }
+                      >
+                        All
+                      </Button>
+                    </Tooltip>
                     <Button
                       buttonType="ghost"
                       size="sm"
@@ -782,7 +885,7 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
                   {selected.map((name) => (
                     <Chip
                       key={name}
-                      text={name}
+                      text={paramByKey.get(name)?.label ?? name}
                       size="xs"
                       variant="outlined"
                       theme="accent-light"
@@ -805,50 +908,110 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
                   ) : null}
                 </div>
 
-                <InputKeywordSearch
-                  aria-label="Search parameters"
-                  placeholder="Search parameters to add (e.g. pageTitle, ogImage)…"
-                  value={paramSearch}
-                  onSearchTextChanged={setParamSearch}
-                  onClear={() => setParamSearch("")}
-                  disabledFieldSubmission
-                />
+                <div
+                  css={css`
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    gap: var(--spacing-sm);
+                  `}
+                >
+                  <div
+                    css={css`
+                      flex: 1 1 240px;
+                    `}
+                  >
+                    <InputKeywordSearch
+                      aria-label="Search parameters"
+                      placeholder="Search parameters to add (e.g. pageTitle, formId)…"
+                      value={paramSearch}
+                      onSearchTextChanged={setParamSearch}
+                      onClear={() => setParamSearch("")}
+                      disabledFieldSubmission
+                    />
+                  </div>
+                  {data.locales.length > 0 ? (
+                    <InputSelect
+                      label="Locale for localized parameters"
+                      showLabel={false}
+                      value={locale}
+                      onChange={(e) => setLocaleChoice(e.target.value)}
+                      options={data.locales.map((l) => ({
+                        label: `Locale: ${l}`,
+                        value: l,
+                      }))}
+                    />
+                  ) : null}
+                </div>
 
                 <div
                   css={css`
-                    display: grid;
-                    grid-template-columns: repeat(
-                      auto-fill,
-                      minmax(230px, 1fr)
-                    );
-                    gap: var(--spacing-2xs) var(--spacing-md);
-                    max-height: 220px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--spacing-sm);
+                    max-height: 320px;
                     overflow-y: auto;
                     padding: var(--spacing-xs);
                     border: 1px solid var(--gray-100);
                     border-radius: var(--rounded-md);
                   `}
                 >
-                  {paramList.map((key) => (
-                    <CheckboxWithInfo
-                      key={key}
-                      name={`param-${key}`}
-                      label={key}
-                      checked={selected.includes(key)}
-                      onChange={() => toggleParam(key)}
-                    />
+                  {paramGroups.map(([type, params]) => (
+                    <div key={type}>
+                      <Caption>
+                        <strong>{type}</strong>
+                      </Caption>
+                      <div
+                        css={css`
+                          display: grid;
+                          grid-template-columns: repeat(
+                            auto-fill,
+                            minmax(230px, 1fr)
+                          );
+                          gap: var(--spacing-2xs) var(--spacing-md);
+                        `}
+                      >
+                        {params.map((p) => (
+                          <CheckboxWithInfo
+                            key={p.key}
+                            name={`param-${type}-${p.key}`}
+                            label={
+                              p.label === p.key
+                                ? p.key
+                                : `${p.label} (${p.key})`
+                            }
+                            info={
+                              `${p.pageCount} ${p.pageCount === 1 ? "page" : "pages"}` +
+                              (p.localized ? " · localized" : "")
+                            }
+                            checked={selected.includes(p.key)}
+                            onChange={() => toggleParam(p.key)}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   ))}
-                  {paramList.length === 0 ? (
+                  {paramGroups.length === 0 ? (
                     <span
                       css={css`
                         font-size: var(--fs-sm);
                         color: var(--typography-light);
                       `}
                     >
-                      No parameters match "{paramSearch}".
+                      {paramSearch
+                        ? `No parameters match "${paramSearch}".`
+                        : "No pages in this project map have parameter values."}
                     </span>
                   ) : null}
                 </div>
+                {emptyParamCount > 0 ? (
+                  <Switch
+                    label={`Show ${emptyParamCount} parameters that have no value on any page`}
+                    checked={showEmptyParams}
+                    onChange={(e) => setShowEmptyParams(e.target.checked)}
+                    switchSize="sm"
+                  />
+                ) : null}
               </div>
             </Details>
 
@@ -974,7 +1137,11 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
                         {selected.map((key) => (
                           <TableCellHead key={key}>
                             <ColumnHeadLabel
-                              label={key}
+                              label={
+                                paramByKey.get(key)?.localized && locale
+                                  ? `${key} (${locale})`
+                                  : key
+                              }
                               mono
                               checked
                               onToggle={() => toggleParam(key)}
@@ -1000,7 +1167,7 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
                             </TableCellData>
                           ))}
                           {selected.map((key) => {
-                            const value = n.parameters[key] ?? "";
+                            const value = resolveParam(n, key, locale);
                             return (
                               <TableCellData key={key}>
                                 {value ? <TruncatedText value={value} /> : DASH}
@@ -1059,48 +1226,50 @@ export function ProjectMapPanel({ projectId }: { projectId: string }) {
         ) : null}
       </PanelSection>
 
-      {/* ------- Import ------- */}
-      <PanelSection label="Import project map">
-        <SectionHeader
-          title="Import project map from CSV"
-          description={
-            <>
-              Rows match existing nodes by Node ID, or by path when no ID is
-              given. You will review every change before anything is written.{" "}
-              <Link
-                text="Download a template CSV"
-                href="#"
-                onClick={handleTemplate}
-              />
-            </>
-          }
-        />
-
-        {importError ? <Banner type="danger">{importError}</Banner> : null}
-
-        {importStage === "idle" ? (
-          <CsvDropzone disabled={!data} onFile={handleFile} />
-        ) : null}
-
-        {importStage === "preview" && classified ? (
-          <ImportPreview
-            fileName={importFileName}
-            rows={classified.previewRows}
-            unchangedCount={classified.unchanged}
-            applying={importing}
-            onCancel={resetImport}
-            onApply={handleApply}
+      {/* ------- Import (hidden when an admin turned it off in the settings) ------- */}
+      {importAllowed ? (
+        <PanelSection label="Import project map">
+          <SectionHeader
+            title="Import project map from CSV"
+            description={
+              <>
+                Rows match existing nodes by Node ID, or by path when no ID is
+                given. You will review every change before anything is written.{" "}
+                <Link
+                  text="Download a template CSV"
+                  href="#"
+                  onClick={handleTemplate}
+                />
+              </>
+            }
           />
-        ) : null}
 
-        {importStage === "done" ? (
-          <ImportDone
-            summary={doneSummary}
-            errorDetail={doneErrorDetail}
-            onReset={resetImport}
-          />
-        ) : null}
-      </PanelSection>
+          {importError ? <Banner type="danger">{importError}</Banner> : null}
+
+          {importStage === "idle" ? (
+            <CsvDropzone disabled={!data} onFile={handleFile} />
+          ) : null}
+
+          {importStage === "preview" && classified ? (
+            <ImportPreview
+              fileName={importFileName}
+              rows={classified.previewRows}
+              unchangedCount={classified.unchanged}
+              applying={importing}
+              onCancel={resetImport}
+              onApply={handleApply}
+            />
+          ) : null}
+
+          {importStage === "done" ? (
+            <ImportDone
+              summary={doneSummary}
+              errorDetail={doneErrorDetail}
+              onReset={resetImport}
+            />
+          ) : null}
+        </PanelSection>
+      ) : null}
     </Stack>
   );
 }

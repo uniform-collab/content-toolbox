@@ -8,7 +8,7 @@ import {
 } from '@uniformdev/mesh-sdk-react';
 import type { NextPage } from 'next';
 
-import { ContentOpsToolkit } from '../components/content-ops-toolkit';
+import { ContentOpsToolkit, type ToolkitSettings } from '../components/content-ops-toolkit';
 import { PageShell } from '../components/ui';
 import { checkActive, onSessionToken } from '../lib/delegationSessionCallbacks';
 
@@ -16,7 +16,15 @@ const queryClient = new QueryClient();
 
 function ToolkitBody() {
   const { metadata } = useMeshLocation<'projectTool'>();
-  return <ContentOpsToolkit projectId={metadata.projectId} />;
+  const settings = (metadata.settings ?? {}) as ToolkitSettings;
+  const defaultLocale = metadata.locales?.find((l) => l.isDefault)?.locale;
+  return (
+    <ContentOpsToolkit
+      projectId={metadata.projectId}
+      defaultLocale={defaultLocale}
+      settings={settings}
+    />
+  );
 }
 
 /**

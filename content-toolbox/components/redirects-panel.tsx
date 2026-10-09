@@ -223,7 +223,14 @@ function codeLabel(code: number) {
 
 const PAGE_SIZE = 10;
 
-export function RedirectsPanel({ projectId }: { projectId: string }) {
+export function RedirectsPanel({
+  projectId,
+  importAllowed = true,
+}: {
+  projectId: string;
+  /** False when an admin turned off redirects import in the integration settings. */
+  importAllowed?: boolean;
+}) {
   const { data, error, isLoading, refetch } = useRedirectsQuery(projectId);
 
   const [search, setSearch] = useState('');
@@ -506,39 +513,43 @@ export function RedirectsPanel({ projectId }: { projectId: string }) {
         ) : null}
       </PanelSection>
 
-      {/* ------- Import ------- */}
-      <PanelSection label="Import redirects">
-        <SectionHeader
-          title="Import redirects from CSV"
-          description={
-            <>
-              Rows with an ID update existing redirects; rows without an ID create new ones. You
-              will review every change before anything is written.{' '}
-              <Link text="Download a template CSV" href="#" onClick={handleTemplate} />
-            </>
-          }
-        />
-
-        {importError ? <Banner type="danger">{importError}</Banner> : null}
-
-        {importStage === 'idle' ? <CsvDropzone disabled={!data} onFile={handleFile} /> : null}
-
-        {importStage === 'preview' && classified ? (
-          <ImportPreview
-            fileName={importFileName}
-            rows={classified.previewRows}
-            unchangedCount={classified.unchanged}
-            monoNames
-            applying={importing}
-            onCancel={resetImport}
-            onApply={handleApply}
+      {/* ------- Import (hidden when an admin turned it off in the settings) ------- */}
+      {importAllowed ? (
+        <PanelSection label="Import redirects">
+          <SectionHeader
+            title="Import redirects from CSV"
+            description={
+              <>
+                Rows with an ID update existing redirects; rows without an ID create new ones. You
+                will review every change before anything is written.{' '}
+                <Link text="Download a template CSV" href="#" onClick={handleTemplate} />
+              </>
+            }
           />
-        ) : null}
 
-        {importStage === 'done' ? (
-          <ImportDone summary={doneSummary} errorDetail={doneErrorDetail} onReset={resetImport} />
-        ) : null}
-      </PanelSection>
+          {importError ? <Banner type="danger">{importError}</Banner> : null}
+
+          {importStage === 'idle' ? (
+            <CsvDropzone disabled={!data} onFile={handleFile} />
+          ) : null}
+
+          {importStage === 'preview' && classified ? (
+            <ImportPreview
+              fileName={importFileName}
+              rows={classified.previewRows}
+              unchangedCount={classified.unchanged}
+              monoNames
+              applying={importing}
+              onCancel={resetImport}
+              onApply={handleApply}
+            />
+          ) : null}
+
+          {importStage === 'done' ? (
+            <ImportDone summary={doneSummary} errorDetail={doneErrorDetail} onReset={resetImport} />
+          ) : null}
+        </PanelSection>
+      ) : null}
     </Stack>
   );
 }

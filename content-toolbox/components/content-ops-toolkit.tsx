@@ -15,7 +15,21 @@ import { useState } from 'react';
 import { ProjectMapPanel, useProjectMapQuery } from './project-map-panel';
 import { RedirectsPanel, useRedirectsQuery } from './redirects-panel';
 
-export function ContentOpsToolkit({ projectId }: { projectId: string }) {
+/** Admin settings from the integration settings page. Unset flags mean "allowed". */
+export interface ToolkitSettings {
+  allowProjectMapImport?: boolean;
+  allowRedirectsImport?: boolean;
+}
+
+export function ContentOpsToolkit({
+  projectId,
+  defaultLocale,
+  settings,
+}: {
+  projectId: string;
+  defaultLocale?: string;
+  settings?: ToolkitSettings;
+}) {
   const [tab, setTab] = useState<string | undefined>('project-map');
 
   // Same query keys as the panels, so react-query shares a single fetch.
@@ -88,7 +102,11 @@ export function ContentOpsToolkit({ projectId }: { projectId: string }) {
               padding-top: var(--spacing-md);
             `}
           >
-            <ProjectMapPanel projectId={projectId} />
+            <ProjectMapPanel
+              projectId={projectId}
+              defaultLocale={defaultLocale}
+              importAllowed={settings?.allowProjectMapImport !== false}
+            />
           </div>
         </TabContent>
         <TabContent tabId="redirects" keepMounted>
@@ -97,7 +115,10 @@ export function ContentOpsToolkit({ projectId }: { projectId: string }) {
               padding-top: var(--spacing-md);
             `}
           >
-            <RedirectsPanel projectId={projectId} />
+            <RedirectsPanel
+              projectId={projectId}
+              importAllowed={settings?.allowRedirectsImport !== false}
+            />
           </div>
         </TabContent>
       </Tabs>

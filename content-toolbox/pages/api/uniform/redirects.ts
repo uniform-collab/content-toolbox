@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 
 import { requireMeshCsrf } from '../../../lib/csrf';
 import { loadMeshDelegationSession } from '../../../lib/delegationSession';
+import { importBlockedMessage, isImportAllowed } from '../../../lib/importGuard';
 import {
   getAllRedirects,
   upsertRedirects,
@@ -24,6 +25,11 @@ interface ImportBody {
 }
 
 async function handlePost(req: NextApiRequest, res: NextApiResponse, auth: UniformAuth) {
+  if (!(await isImportAllowed(auth, 'allowRedirectsImport'))) {
+    res.status(403).json({ error: importBlockedMessage('redirects') });
+    return;
+  }
+
   const body = req.body as ImportBody;
   if (!Array.isArray(body?.redirects)) {
     res.status(400).json({ error: 'Expected { redirects } in request body.' });
