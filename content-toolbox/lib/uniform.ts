@@ -148,12 +148,19 @@ export async function upsertProjectMapNodes(
 
 // ---------- Canvas (compositions) ----------
 
+/** A composition parameter. Localized parameters keep values in `locales`, not `value`. */
+export interface CanvasParameter {
+  type: string
+  value?: unknown
+  locales?: Record<string, unknown>
+}
+
 export interface CanvasItem {
   composition: {
     _id: string
     _name: string
     type: string
-    parameters?: Record<string, { type: string; value: unknown }>
+    parameters?: Record<string, CanvasParameter>
   }
   state: number
   modified: string
@@ -186,6 +193,63 @@ export async function getAllCompositions(
     offset += LIMIT
   }
   return all
+}
+
+export interface ComponentDefinitionInfo {
+  public_id: string
+  name: string
+  parameters?: { id: string; name: string; type: string }[]
+}
+
+/** Fetch all component definitions (used for parameter display names). */
+export async function getComponentDefinitions(
+  auth: UniformAuth,
+): Promise<ComponentDefinitionInfo[]> {
+  const all: ComponentDefinitionInfo[] = []
+  const LIMIT = 100
+  let offset = 0
+  for (;;) {
+    const data = await uniformFetch<{
+      componentDefinitions: ComponentDefinitionInfo[]
+    }>(auth, "/api/v1/canvas-definitions", {
+      searchParams: { limit: String(LIMIT), offset: String(offset) },
+    })
+    const page = data.componentDefinitions ?? []
+    all.push(...page)
+    if (page.length < LIMIT) break
+    offset += LIMIT
+  }
+  return all
+}
+
+// ---------- Integration settings ----------
+
+/** Settings an admin edits on the integration settings page. */
+export interface ToolkitSettings {
+  /** False turns off "Import project map from CSV". Unset means allowed. */
+  allowProjectMapImport?: boolean
+  /** False turns off "Import redirects from CSV". Unset means allowed. */
+  allowRedirectsImport?: boolean
+}
+
+const INTEGRATION_TYPE = process.env.MESH_INTEGRATION_TYPE ?? "content-toolbox"
+
+/**
+ * Reads this integration's settings from the project installation. Throws when
+ * the settings cannot be read, so callers can fail closed on write paths.
+ */
+export async function getToolkitSettings(
+  auth: UniformAuth,
+): Promise<ToolkitSettings> {
+  const data = await uniformFetch<{
+    results?: { type: string; data?: Record<string, unknown> }[]
+  }>(auth, "/api/v1/integration-installations", {
+    searchParams: { type: INTEGRATION_TYPE },
+  })
+  const install = (data.results ?? []).find(
+    (r) => r.type === INTEGRATION_TYPE || r.type.startsWith(INTEGRATION_TYPE),
+  )
+  return (install?.data ?? {}) as ToolkitSettings
 }
 
 // ---------- Redirects ----------

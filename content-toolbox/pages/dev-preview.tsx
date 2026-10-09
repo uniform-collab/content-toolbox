@@ -60,9 +60,20 @@ const REDIRECTS_RAW: [string, string, number, boolean][] = [
   ['/getaway-2025', '/en/landing-pages/stockholm-summer-2026-romantic-getaway', 302, true],
 ];
 
+const pageCount = NODES_RAW.filter((n) => n[1] === 'composition').length;
+const FILLED = new Set(['pageTitle', 'metaDescription', 'ogImage', 'theme']);
+
 const mapPayload = {
   projectMap: { id: 'pm-1', name: 'Sitemap' },
-  parameterKeys: PARAMS,
+  // formId is localized; restrictionTwo has no value on any page (hidden by default).
+  parameters: [...PARAMS, 'formId', 'restrictionTwo'].sort().map((key) => ({
+    key,
+    label: key === 'formId' ? 'Form ID' : key === 'pageTitle' ? 'Page Title' : key,
+    compositionTypes: key === 'formId' ? ['Page'] : ['Page', 'Utility'],
+    pageCount: FILLED.has(key) || key === 'formId' ? pageCount : 0,
+    localized: key === 'formId',
+  })),
+  locales: ['de-DE', 'en-US'],
   nodes: NODES_RAW.map((n, i) => ({
     id: `node-${i + 1}`,
     name: n[0],
@@ -76,10 +87,13 @@ const mapPayload = {
     parameters:
       n[1] === 'composition'
         ? {
-            pageTitle: `${n[0]} | EcoQuest`,
-            metaDescription: `Discover ${n[0].toLowerCase()} with EcoQuest — sustainable travel experiences.`,
-            ogImage: `https://img.example.com/${n[0].toLowerCase().replace(/\s+/g, '-')}.jpg`,
-            theme: i % 2 ? 'light' : 'dark',
+            pageTitle: { value: `${n[0]} | EcoQuest` },
+            metaDescription: {
+              value: `Discover ${n[0].toLowerCase()} with EcoQuest — sustainable travel experiences.`,
+            },
+            ogImage: { value: `https://img.example.com/${n[0].toLowerCase().replace(/\s+/g, '-')}.jpg` },
+            theme: { value: i % 2 ? 'light' : 'dark' },
+            formId: { locales: { 'en-US': `FRM-${1000 + i} (A)`, 'de-DE': `FRM-${2000 + i}` } },
           }
         : {},
   })),
@@ -127,7 +141,11 @@ const DevPreviewPage: NextPage = () => {
     <QueryClientProvider client={queryClient}>
       <Theme />
       <PageShell>
-        <ContentOpsToolkit projectId="preview" />
+        <ContentOpsToolkit
+          projectId="preview"
+          defaultLocale="en-US"
+          settings={{ allowRedirectsImport: false }}
+        />
       </PageShell>
     </QueryClientProvider>
   );
